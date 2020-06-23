@@ -135,7 +135,7 @@ pub enum Error {
     /// Raised when dependency defined manually using `SYSTEM_DEPS_$NAME_NO_PKG_CONFIG`
     /// did not define at least one lib using `SYSTEM_DEPS_$NAME_LIB` or
     /// `SYSTEM_DEPS_$NAME_LIB_FRAMEWORK`
-    #[error("You should define at least one lib using {} or {}", flag_override_var(.0, "LIB"), flag_override_var(.0, "LIB_FRAMEWORK"))]
+    #[error("You should define at least one lib using {} or {}", EnvVariable::new_lib(.0).to_string(), EnvVariable::new_lib_framework(.0))]
     MissingLib(String),
     /// An environment variable in the form of `SYSTEM_DEPS_$NAME_BUILD_INTERNAL`
     /// contained an invalid value (allowed: `auto`, `always`, `never`)
@@ -173,6 +173,77 @@ impl BuildInternalClosureError {
     /// * `details`: human-readable details about the failure
     pub fn failed(details: &str) -> Self {
         Self::Failed(details.to_string())
+    }
+}
+
+// enums representing the environment variables user can define to tune system-deps
+enum EnvVariable {
+    Lib(String),
+    LibFramework(String),
+    SearchNative(String),
+    SearchFramework(String),
+    Include(String),
+    NoPkgConfig(String),
+    BuildInternal(Option<String>),
+}
+
+impl EnvVariable {
+    fn new_lib(lib: &str) -> Self {
+        Self::Lib(lib.to_string())
+    }
+
+    fn new_lib_framework(lib: &str) -> Self {
+        Self::LibFramework(lib.to_string())
+    }
+
+    fn new_search_native(lib: &str) -> Self {
+        Self::SearchNative(lib.to_string())
+    }
+
+    fn new_search_framework(lib: &str) -> Self {
+        Self::SearchFramework(lib.to_string())
+    }
+
+    fn new_include(lib: &str) -> Self {
+        Self::Include(lib.to_string())
+    }
+
+    fn new_no_pkg_config(lib: &str) -> Self {
+        Self::NoPkgConfig(lib.to_string())
+    }
+
+    fn new_build_internal(lib: Option<&str>) -> Self {
+        Self::BuildInternal(lib.map(|l| l.to_string()))
+    }
+
+    fn suffix(&self) -> &'static str {
+        match self {
+            EnvVariable::Lib(_) => "LIB",
+            EnvVariable::LibFramework(_) => "LIB_FRAMEWORK",
+            EnvVariable::SearchNative(_) => "SEARCH_NATIVE",
+            EnvVariable::SearchFramework(_) => "SEARCH_FRAMEWORK",
+            EnvVariable::Include(_) => "INCLUDE",
+            EnvVariable::NoPkgConfig(_) => "NO_PKG_CONFIG",
+            EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
+        }
+    }
+}
+
+impl fmt::Display for EnvVariable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let suffix = match self {
+            EnvVariable::Lib(lib)
+            | EnvVariable::LibFramework(lib)
+            | EnvVariable::SearchNative(lib)
+            | EnvVariable::SearchFramework(lib)
+            | EnvVariable::Include(lib)
+            | EnvVariable::NoPkgConfig(lib)
+            | EnvVariable::BuildInternal(Some(lib)) => {
+                format!("{}_{}", lib.to_shouty_snake_case(), self.suffix())
+            }
+            EnvVariable::BuildInternal(None) => self.suffix().to_string(),
+        };
+        write!(f, "SYSTEM_DEPS_{}", suffix)
     }
 }
 
@@ -363,7 +434,7 @@ impl Config {
 
             let build_internal = self.get_build_internal_status(name)?;
 
-            let library = if self.env.contains(&flag_override_var(name, "NO_PKG_CONFIG")) {
+            let library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables()
             } else if build_internal == BuildInternal::Always {
                 self.call_build_internal(lib_name, version)?
@@ -391,7 +462,7 @@ impl Config {
         Ok(libraries)
     }
 
-    fn get_build_internal_env_var(&self, var: &str) -> Result<Option<BuildInternal>, Error> {
+    fn get_build_internal_env_var(&self, var: EnvVariable) -> Result<Option<BuildInternal>, Error> {
         match self.env.get(&var).as_deref() {
             Some(s) => {
                 let b = BuildInternal::from_str(s).map_err(|_| {
@@ -407,12 +478,10 @@ impl Config {
     }
 
     fn get_build_internal_status(&self, name: &str) -> Result<BuildInternal, Error> {
-        let var = flag_override_var(name, "BUILD_INTERNAL");
-
-        match self.get_build_internal_env_var(&var)? {
+        match self.get_build_internal_env_var(EnvVariable::new_build_internal(Some(name)))? {
             Some(b) => Ok(b),
             None => Ok(self
-                .get_build_internal_env_var("SYSTEM_DEPS_BUILD_INTERNAL")?
+                .get_build_internal_env_var(EnvVariable::new_build_internal(None))?
                 .unwrap_or_default()),
         }
     }
@@ -438,19 +507,19 @@ impl Config {
 
     fn override_from_flags(&self, libraries: &mut HashMap<String, Library>) {
         for (name, lib) in libraries.iter_mut() {
-            if let Some(value) = self.env.get(&flag_override_var(name, "SEARCH_NATIVE")) {
+            if let Some(value) = self.env.get(&EnvVariable::new_search_native(name)) {
                 lib.link_paths = split_paths(&value);
             }
-            if let Some(value) = self.env.get(&flag_override_var(name, "SEARCH_FRAMEWORK")) {
+            if let Some(value) = self.env.get(&EnvVariable::new_search_framework(name)) {
                 lib.framework_paths = split_paths(&value);
             }
-            if let Some(value) = self.env.get(&flag_override_var(name, "LIB")) {
+            if let Some(value) = self.env.get(&EnvVariable::new_lib(name)) {
                 lib.libs = split_string(&value);
             }
-            if let Some(value) = self.env.get(&flag_override_var(name, "LIB_FRAMEWORK")) {
+            if let Some(value) = self.env.get(&EnvVariable::new_lib_framework(name)) {
                 lib.frameworks = split_string(&value);
             }
-            if let Some(value) = self.env.get(&flag_override_var(name, "INCLUDE")) {
+            if let Some(value) = self.env.get(&EnvVariable::new_include(name)) {
                 lib.include_paths = split_paths(&value);
             }
         }
@@ -496,8 +565,8 @@ impl Config {
     }
 
     fn has_feature(&self, feature: &str) -> bool {
-        let var = format!("CARGO_FEATURE_{}", feature.to_uppercase().replace('-', "_"));
-        self.env.contains(&var)
+        let var: &str = &format!("CARGO_FEATURE_{}", feature.to_uppercase().replace('-', "_"));
+        self.env.contains(var)
     }
 }
 
@@ -620,17 +689,28 @@ enum EnvVariables {
     Mock(HashMap<&'static str, String>),
 }
 
-impl EnvVariables {
-    fn contains(&self, var: &str) -> bool {
+trait EnvVariablesExt<T> {
+    fn contains(&self, var: T) -> bool {
         self.get(var).is_some()
     }
+    fn get(&self, var: T) -> Option<String>;
+}
 
+impl EnvVariablesExt<&str> for EnvVariables {
     fn get(&self, var: &str) -> Option<String> {
         match self {
             EnvVariables::Environnement => env::var(var).ok(),
             #[cfg(test)]
             EnvVariables::Mock(vars) => vars.get(var).cloned(),
         }
+    }
+}
+
+impl EnvVariablesExt<&EnvVariable> for EnvVariables {
+    fn get(&self, var: &EnvVariable) -> Option<String> {
+        let s = var.to_string();
+        let var: &str = s.as_ref();
+        self.get(var)
     }
 }
 
@@ -676,10 +756,6 @@ impl fmt::Display for BuildFlags {
         }
         Ok(())
     }
-}
-
-fn flag_override_var(lib: &str, flag: &str) -> String {
-    format!("SYSTEM_DEPS_{}_{}", lib.to_shouty_snake_case(), flag)
 }
 
 fn split_paths(value: &str) -> Vec<PathBuf> {
