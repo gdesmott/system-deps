@@ -8,7 +8,7 @@ For now only `pkg-config` dependencies are supported but we are planning to
 [expand it](https://github.com/gdesmott/system-deps/issues/3) at some point.
 
 Users can override dependency flags using environment variables if needed.
-`system-deps` also allow `-sys` crates to optionnally internally build and
+`system-deps` also allows `-sys` crates to optionally internally build and
 static link the required system library.
 
 `system-deps` has been started as a fork of the
