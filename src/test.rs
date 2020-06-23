@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use pkg_config;
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -49,6 +50,13 @@ fn toml(
     create_config(path, env).probe_full()
 }
 
+fn assert_flags(flags: BuildFlags, expected: &str) {
+    // flags ordering isn't guaranteed so sort them out before comparing
+    let flags = flags.to_string().split("\n").sorted().join("\n");
+    let expected = expected.to_string().split("\n").sorted().join("\n");
+    assert_eq!(flags, expected);
+}
+
 #[test]
 fn good() {
     let (libraries, flags) = toml("toml-good", vec![]).unwrap();
@@ -58,14 +66,14 @@ fn good() {
     assert_eq!(testdata.version, "4.5.6");
     assert!(libraries.get("testmore").is_none());
 
-    assert_eq!(
-        flags.to_string(),
+    assert_flags(
+        flags,
         r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
-"#
+"#,
     );
 }
 
@@ -197,15 +205,15 @@ fn override_search_native() {
         vec![Path::new("/custom/path"), Path::new("/other/path")]
     );
 
-    assert_eq!(
-        flags.to_string(),
+    assert_flags(
+        flags,
         r#"cargo:rustc-link-search=native=/custom/path
 cargo:rustc-link-search=native=/other/path
 cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
-"#
+"#,
     );
 }
 
@@ -219,14 +227,14 @@ fn override_search_framework() {
     let testlib = libraries.get("testlib").unwrap();
     assert_eq!(testlib.framework_paths, vec![Path::new("/custom/path")]);
 
-    assert_eq!(
-        flags.to_string(),
+    assert_flags(
+        flags,
         r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-search=framework=/custom/path
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
-"#
+"#,
     );
 }
 
@@ -240,15 +248,15 @@ fn override_lib() {
     let testlib = libraries.get("testlib").unwrap();
     assert_eq!(testlib.libs, vec!["overrided-test", "other-test"]);
 
-    assert_eq!(
-        flags.to_string(),
+    assert_flags(
+        flags,
         r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=overrided-test
 cargo:rustc-link-lib=other-test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
-"#
+"#,
     );
 }
 
@@ -262,14 +270,14 @@ fn override_framework() {
     let testlib = libraries.get("testlib").unwrap();
     assert_eq!(testlib.frameworks, vec!["overrided-framework"]);
 
-    assert_eq!(
-        flags.to_string(),
+    assert_flags(
+        flags,
         r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=overrided-framework
 cargo:include=/usr/include/testlib
-"#
+"#,
     );
 }
 
@@ -283,14 +291,14 @@ fn override_include() {
     let testlib = libraries.get("testlib").unwrap();
     assert_eq!(testlib.include_paths, vec![Path::new("/other/include")]);
 
-    assert_eq!(
-        flags.to_string(),
+    assert_flags(
+        flags,
         r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/other/include
-"#
+"#,
     );
 }
 
@@ -314,7 +322,7 @@ fn override_unset() {
     assert_eq!(testlib.frameworks, Vec::<String>::new());
     assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
 
-    assert_eq!(flags.to_string(), "");
+    assert_flags(flags, "");
 }
 
 #[test]
@@ -334,7 +342,7 @@ fn override_no_pkg_config() {
     assert_eq!(testlib.frameworks, Vec::<String>::new());
     assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
 
-    assert_eq!(flags.to_string(), "cargo:rustc-link-lib=custom-lib\n");
+    assert_flags(flags, "cargo:rustc-link-lib=custom-lib\n");
 }
 
 #[test]
