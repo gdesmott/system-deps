@@ -73,6 +73,21 @@ cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 "#,
     );
 }
@@ -213,6 +228,21 @@ cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 "#,
     );
 }
@@ -234,6 +264,21 @@ cargo:rustc-link-search=framework=/custom/path
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 "#,
     );
 }
@@ -256,6 +301,21 @@ cargo:rustc-link-lib=overrided-test
 cargo:rustc-link-lib=other-test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 "#,
     );
 }
@@ -277,6 +337,21 @@ cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=overrided-framework
 cargo:include=/usr/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 "#,
     );
 }
@@ -298,6 +373,21 @@ cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/other/include
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 "#,
     );
 }
@@ -322,7 +412,25 @@ fn override_unset() {
     assert_eq!(testlib.frameworks, Vec::<String>::new());
     assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
 
-    assert_flags(flags, "");
+    assert_flags(
+        flags,
+        r"cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
+",
+    );
 }
 
 #[test]
@@ -342,7 +450,26 @@ fn override_no_pkg_config() {
     assert_eq!(testlib.frameworks, Vec::<String>::new());
     assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
 
-    assert_flags(flags, "cargo:rustc-link-lib=custom-lib\n");
+    assert_flags(
+        flags,
+        r"cargo:rustc-link-lib=custom-lib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
+",
+    );
 }
 
 #[test]

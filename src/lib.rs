@@ -113,7 +113,8 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use strum_macros::EnumString;
+use strum::IntoEnumIterator;
+use strum_macros::{EnumIter, EnumString};
 use thiserror::Error;
 use version_compare::VersionCompare;
 
@@ -177,6 +178,7 @@ impl BuildInternalClosureError {
 }
 
 // enums representing the environment variables user can define to tune system-deps
+#[derive(Debug, PartialEq, EnumIter)]
 enum EnvVariable {
     Lib(String),
     LibFramework(String),
@@ -561,6 +563,26 @@ impl Config {
             }
         }
 
+        // Export cargo:rerun-if-env-changed instructions for all env variables affecting system-deps behaviour
+        flags.add(BuildFlag::RerunIfEnvChanged(
+            EnvVariable::new_build_internal(None),
+        ));
+
+        for (name, _lib) in libraries.iter() {
+            for var in EnvVariable::iter() {
+                let var = match var {
+                    EnvVariable::Lib(_) => EnvVariable::new_lib(name),
+                    EnvVariable::LibFramework(_) => EnvVariable::new_lib_framework(name),
+                    EnvVariable::SearchNative(_) => EnvVariable::new_search_native(name),
+                    EnvVariable::SearchFramework(_) => EnvVariable::new_search_framework(name),
+                    EnvVariable::Include(_) => EnvVariable::new_include(name),
+                    EnvVariable::NoPkgConfig(_) => EnvVariable::new_no_pkg_config(name),
+                    EnvVariable::BuildInternal(_) => EnvVariable::new_build_internal(Some(name)),
+                };
+                flags.add(BuildFlag::RerunIfEnvChanged(var));
+            }
+        }
+
         Ok(flags)
     }
 
@@ -722,6 +744,7 @@ enum BuildFlag {
     SearchFramework(String),
     Lib(String),
     LibFramework(String),
+    RerunIfEnvChanged(EnvVariable),
 }
 
 impl fmt::Display for BuildFlag {
@@ -732,6 +755,7 @@ impl fmt::Display for BuildFlag {
             BuildFlag::SearchFramework(lib) => write!(f, "rustc-link-search=framework={}", lib),
             BuildFlag::Lib(lib) => write!(f, "rustc-link-lib={}", lib),
             BuildFlag::LibFramework(lib) => write!(f, "rustc-link-lib=framework={}", lib),
+            BuildFlag::RerunIfEnvChanged(env) => write!(f, "rerun-if-env-changed={}", env),
         }
     }
 }
