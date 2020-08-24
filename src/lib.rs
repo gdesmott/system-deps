@@ -116,6 +116,7 @@ use std::str::FromStr;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, EnumString};
 use thiserror::Error;
+use vcpkg;
 use version_compare::VersionCompare;
 
 /// system-deps errors
@@ -124,6 +125,9 @@ pub enum Error {
     /// pkg-config error
     #[error(transparent)]
     PkgConfig(#[from] pkg_config::Error),
+    /// vcpkg error
+    #[error(transparent)]
+    Vcpkg(#[from] vcpkg::Error),
     /// One of the `Config::add_build_internal` closures failed
     #[error("Failed to build {0}: {1}")]
     BuildInternalClosureError(String, #[source] BuildInternalClosureError),
@@ -187,6 +191,7 @@ enum EnvVariable {
     Include(String),
     NoPkgConfig(String),
     BuildInternal(Option<String>),
+    UseVcpkg(String),
 }
 
 impl EnvVariable {
@@ -218,6 +223,10 @@ impl EnvVariable {
         Self::BuildInternal(lib.map(|l| l.to_string()))
     }
 
+    fn new_use_vcpkg(lib: &str) -> Self {
+        Self::UseVcpkg(lib.to_string())
+    }
+
     fn suffix(&self) -> &'static str {
         match self {
             EnvVariable::Lib(_) => "LIB",
@@ -227,6 +236,7 @@ impl EnvVariable {
             EnvVariable::Include(_) => "INCLUDE",
             EnvVariable::NoPkgConfig(_) => "NO_PKG_CONFIG",
             EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
+            EnvVariable::UseVcpkg(_) => "USE_VCPKG",
         }
     }
 }
@@ -240,6 +250,7 @@ impl fmt::Display for EnvVariable {
             | EnvVariable::SearchFramework(lib)
             | EnvVariable::Include(lib)
             | EnvVariable::NoPkgConfig(lib)
+            | EnvVariable::UseVcpkg(lib)
             | EnvVariable::BuildInternal(Some(lib)) => {
                 format!("{}_{}", lib.to_shouty_snake_case(), self.suffix())
             }
@@ -436,7 +447,22 @@ impl Config {
 
             let build_internal = self.get_build_internal_status(name)?;
 
-            let library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
+            let library = if self.env.contains(&EnvVariable::new_use_vcpkg(name)) {
+                match vcpkg::Config::new()
+                .cargo_metadata(false)
+                .find_package(lib_name)
+            {
+                Ok(lib) => Library::from_vcpkg(lib),
+                Err(e) => {
+                    if build_internal == BuildInternal::Auto {
+                        // Try building the lib internally as a fallback
+                        self.call_build_internal(name, version)?
+                    } else {
+                        return Err(e.into());
+                    }
+                }
+            }
+            } else if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables()
             } else if build_internal == BuildInternal::Always {
                 self.call_build_internal(lib_name, version)?
@@ -469,7 +495,7 @@ impl Config {
             Some(s) => {
                 let b = BuildInternal::from_str(s).map_err(|_| {
                     Error::BuildInternalInvalid(format!(
-                        "Invalid value in {}: {} (allowed: 'auto', 'always', 'never')",
+                        "Invalid value in {}: {} (allowed: 'auto', 'always', 'nzever')",
                         var, s
                     ))
                 })?;
@@ -578,6 +604,7 @@ impl Config {
                     EnvVariable::Include(_) => EnvVariable::new_include(name),
                     EnvVariable::NoPkgConfig(_) => EnvVariable::new_no_pkg_config(name),
                     EnvVariable::BuildInternal(_) => EnvVariable::new_build_internal(Some(name)),
+                    EnvVariable::UseVcpkg(_) => EnvVariable::new_use_vcpkg(name),
                 };
                 flags.add(BuildFlag::RerunIfEnvChanged(var));
             }
@@ -597,6 +624,8 @@ impl Config {
 pub enum Source {
     /// Settings have been retrieved from `pkg-config`
     PkgConfig,
+    /// Settings have been retrieved from `vcpkg`
+    Vcpkg,
     /// Settings have been defined using user defined environment variables
     EnvVariables,
 }
@@ -633,6 +662,19 @@ impl Library {
             framework_paths: l.framework_paths,
             defines: l.defines,
             version: l.version,
+        }
+    }
+
+    fn from_vcpkg(l: vcpkg::Library) -> Self {
+        Self {
+            source: Source::Vcpkg,
+            libs: l.found_names,
+            link_paths: l.link_paths,
+            include_paths: l.include_paths,
+            frameworks: Vec::new(),
+            framework_paths: Vec::new(),
+            defines: HashMap::new(),
+            version: String::new(),
         }
     }
 

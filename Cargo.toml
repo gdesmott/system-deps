@@ -18,6 +18,7 @@ heck = "0.3"
 strum = "0.18"
 strum_macros = "0.18"
 thiserror = "1"
+vcpkg = "0.2"
 
 [dev-dependencies]
 lazy_static = "1"
