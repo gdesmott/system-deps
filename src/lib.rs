@@ -198,6 +198,16 @@ enum EnvVariable {
     BuildInternal(Option<String>),
 }
 
+struct FeatureOverride<'a> {
+    version: &'a str,
+}
+
+impl<'a> FeatureOverride<'a> {
+    fn new(version: &'a str) -> Self {
+        Self { version }
+    }
+}
+
 impl EnvVariable {
     fn new_lib(lib: &str) -> Self {
         Self::Lib(lib.to_string())
@@ -361,12 +371,12 @@ impl Config {
         let mut libraries = HashMap::new();
         for (name, value) in table {
             let (lib_name, version) = match value {
-                toml::Value::String(ref s) => (name, s),
+                toml::Value::String(ref s) => (name, s.as_str()),
                 toml::Value::Table(ref t) => {
                     let mut feature = None;
                     let mut version = None;
                     let mut lib_name = None;
-                    let mut enabled_feature_versions = Vec::new();
+                    let mut enabled_feature_overrides = Vec::new();
                     for (tname, tvalue) in t {
                         match (tname.as_str(), tvalue) {
                             ("feature", &toml::Value::String(ref s)) => {
@@ -381,12 +391,12 @@ impl Config {
                             (version_feature, &toml::Value::Table(ref version_settings))
                                 if version_feature.starts_with('v') =>
                             {
+                                let mut override_version = None;
+
                                 for (k, v) in version_settings {
                                     match (k.as_str(), v) {
                                         ("version", &toml::Value::String(ref feat_vers)) => {
-                                            if self.has_feature(&version_feature) {
-                                                enabled_feature_versions.push(feat_vers);
-                                            }
+                                            override_version = Some(feat_vers);
                                         }
                                         _ => {
                                             return Err(Error::InvalidMetadata(format!(
@@ -399,6 +409,18 @@ impl Config {
                                         )))
                                         }
                                     }
+                                }
+
+                                let override_version = override_version.ok_or_else(|| {
+                                    Error::InvalidMetadata(format!(
+                                        "Missing version field for {}.{}.{}",
+                                        key, name, tvalue
+                                    ))
+                                })?;
+
+                                if self.has_feature(&version_feature) {
+                                    let f_override = FeatureOverride::new(&override_version);
+                                    enabled_feature_overrides.push(f_override);
                                 }
                             }
                             _ => {
@@ -420,16 +442,18 @@ impl Config {
 
                     let version = {
                         // Pick the highest feature enabled version
-                        if !enabled_feature_versions.is_empty() {
-                            enabled_feature_versions.sort_by(|a, b| {
-                                VersionCompare::compare(b, a)
+                        if !enabled_feature_overrides.is_empty() {
+                            enabled_feature_overrides.sort_by(|a, b| {
+                                VersionCompare::compare(&a.version, &b.version)
                                     .expect("failed to compare versions")
                                     .ord()
                                     .expect("invalid version")
                             });
-                            Some(enabled_feature_versions[0])
+                            let FeatureOverride { version } =
+                                enabled_feature_overrides.into_iter().last().unwrap();
+                            Some(version)
                         } else {
-                            version
+                            version.map(|v| v.as_str())
                         }
                     };
 
