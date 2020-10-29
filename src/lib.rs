@@ -46,6 +46,7 @@
 //! `-sys` crates willing to support various versions of their underlying system libraries
 //! can use features to control the version of the dependency required.
 //! `system-deps` will pick the highest version among enabled features.
+//! Such version features should use the pattern `v1_0`, `v1_2`, etc.
 //!
 //! ```toml
 //! [features]
@@ -53,8 +54,16 @@
 //! v1_4 = ["v1_2"]
 //! v1_6 = ["v1_4"]
 //!
-//! [package.metadata.system-deps]
-//! gstreamer = { name = "gstreamer-1.0", version = "1.0", feature-versions = { v1_2 = "1.2", v1_4 = "1.4", v1_6 = "1.6" }}
+//! [package.metadata.system-deps.gstreamer_1_0]
+//! name = "gstreamer-1.0"
+//! version = "1.0"
+//!
+//! [package.metadata.system-deps.gstreamer_1_0.v1_2]
+//! version = "1.2"
+//! [package.metadata.system-deps.gstreamer_1_0.v1_4]
+//! version = "1.4"
+//! [package.metadata.system-deps.gstreamer_1_0.v1_6]
+//! version = "1.6"
 //! ```
 //!
 //! # Overriding build flags
@@ -369,20 +378,25 @@ impl Config {
                             ("name", &toml::Value::String(ref s)) => {
                                 lib_name = Some(s);
                             }
-                            ("feature-versions", &toml::Value::Table(ref feature_versions)) => {
-                                for (k, v) in feature_versions {
+                            (version_feature, &toml::Value::Table(ref version_settings))
+                                if version_feature.starts_with('v') =>
+                            {
+                                for (k, v) in version_settings {
                                     match (k.as_str(), v) {
-                                        (_, &toml::Value::String(ref feat_vers)) => {
-                                            if self.has_feature(&k) {
+                                        ("version", &toml::Value::String(ref feat_vers)) => {
+                                            if self.has_feature(&version_feature) {
                                                 enabled_feature_versions.push(feat_vers);
                                             }
                                         }
                                         _ => {
                                             return Err(Error::InvalidMetadata(format!(
-                                                "Unexpected feature-version key: {} type {}",
-                                                k,
-                                                v.type_str()
-                                            )))
+                                            "Unexpected version settings key: {}.{}.{}.{} type: {}",
+                                            key,
+                                            name,
+                                            tname,
+                                            k,
+                                            v.type_str()
+                                        )))
                                         }
                                     }
                                 }

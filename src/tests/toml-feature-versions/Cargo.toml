@@ -1,2 +1,2 @@
 [package.metadata.system-deps]
-testdata = { version = "4", feature-versions = { v5 = "5", v6 = "6" }}
+testdata = { version = "4", v5 = { version = "5" }, v6 = { version = "6" }}
