@@ -66,6 +66,18 @@
 //! version = "1.6"
 //! ```
 //!
+//! The same mechanism can be used to require a different library name depending on the version:
+//!
+//! ```toml
+//! [package.metadata.system-deps.gst_gl]
+//! name = "gstreamer-gl-1.0"
+//! version = "1.14"
+//!
+//! [package.metadata.system-deps.gst_gl.v1_18]
+//! version = "1.18"
+//! name = "gstreamer-gl-egl-1.0"
+//! ```
+//!
 //! # Overriding build flags
 //! By default `system-deps` automatically defines the required build flags for each dependency using the information fetched from `pkg-config`.
 //! These flags can be overriden using environment variables if needed:
@@ -200,11 +212,12 @@ enum EnvVariable {
 
 struct FeatureOverride<'a> {
     version: &'a str,
+    name: Option<&'a String>,
 }
 
 impl<'a> FeatureOverride<'a> {
-    fn new(version: &'a str) -> Self {
-        Self { version }
+    fn new(version: &'a str, name: Option<&'a String>) -> Self {
+        Self { version, name }
     }
 }
 
@@ -392,11 +405,15 @@ impl Config {
                                 if version_feature.starts_with('v') =>
                             {
                                 let mut override_version = None;
+                                let mut override_name = None;
 
                                 for (k, v) in version_settings {
                                     match (k.as_str(), v) {
                                         ("version", &toml::Value::String(ref feat_vers)) => {
                                             override_version = Some(feat_vers);
+                                        }
+                                        ("name", &toml::Value::String(ref feat_name)) => {
+                                            override_name = Some(feat_name);
                                         }
                                         _ => {
                                             return Err(Error::InvalidMetadata(format!(
@@ -419,7 +436,8 @@ impl Config {
                                 })?;
 
                                 if self.has_feature(&version_feature) {
-                                    let f_override = FeatureOverride::new(&override_version);
+                                    let f_override =
+                                        FeatureOverride::new(&override_version, override_name);
                                     enabled_feature_overrides.push(f_override);
                                 }
                             }
@@ -440,7 +458,7 @@ impl Config {
                         }
                     }
 
-                    let version = {
+                    let (version, lib_name) = {
                         // Pick the highest feature enabled version
                         if !enabled_feature_overrides.is_empty() {
                             enabled_feature_overrides.sort_by(|a, b| {
@@ -449,16 +467,16 @@ impl Config {
                                     .ord()
                                     .expect("invalid version")
                             });
-                            let FeatureOverride { version } =
+                            let FeatureOverride { version, name } =
                                 enabled_feature_overrides.into_iter().last().unwrap();
-                            Some(version)
+                            (Some(version), name)
                         } else {
-                            version.map(|v| v.as_str())
+                            (version.map(|v| v.as_str()), lib_name)
                         }
                     };
 
                     (
-                        lib_name.unwrap_or(name),
+                        lib_name.unwrap_or_else(|| name),
                         version.ok_or_else(|| {
                             Error::InvalidMetadata(format!("No version in {}.{}", key, name))
                         })?,
