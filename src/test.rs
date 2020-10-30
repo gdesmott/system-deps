@@ -193,6 +193,7 @@ fn override_name() {
 fn feature_versions() {
     let (libraries, _) = toml("toml-feature-versions", vec![]).unwrap();
     let testdata = libraries.get("testdata").unwrap();
+    assert_eq!(testdata.name, "testdata");
     assert_eq!(testdata.version, "4.5.6");
 
     // version 5 is not available
@@ -205,11 +206,13 @@ fn feature_versions() {
 
     let (libraries, _) = toml("toml-version-names", vec![]).unwrap();
     let testlib = libraries.get("testlib").unwrap();
+    assert_eq!(testlib.name, "testlib");
     assert_eq!(testlib.version, "1.2.3");
 
     // Enable feature v2
     let (libraries, _) = toml("toml-version-names", vec![("CARGO_FEATURE_V2", "")]).unwrap();
     let testlib = libraries.get("testlib").unwrap();
+    assert_eq!(testlib.name, "testlib-2.0");
     assert_eq!(testlib.version, "2.0.0");
 }
 
@@ -504,13 +507,13 @@ fn test_build_internal(
     let config = create_config(path, env).add_build_internal(expected_lib, move |lib, version| {
         called_clone.replace(true);
         assert_eq!(lib, expected_lib);
-        let mut lib = pkg_config::Config::new()
+        let mut pkg_lib = pkg_config::Config::new()
             .print_system_libs(false)
             .cargo_metadata(false)
             .probe(lib)
             .unwrap();
-        lib.version = version.to_string();
-        Ok(Library::from_pkg_config(lib))
+        pkg_lib.version = version.to_string();
+        Ok(Library::from_pkg_config(&lib, pkg_lib))
     });
 
     match config.probe_full() {
@@ -617,12 +620,12 @@ fn build_internal_wrong_version() {
     .add_build_internal("testdata", move |lib, _version| {
         called_clone.replace(true);
         assert_eq!(lib, "testdata");
-        let lib = pkg_config::Config::new()
+        let pkg_lib = pkg_config::Config::new()
             .print_system_libs(false)
             .cargo_metadata(false)
             .probe(lib)
             .unwrap();
-        Ok(Library::from_pkg_config(lib))
+        Ok(Library::from_pkg_config(&lib, pkg_lib))
     });
 
     let err = config.probe_full().unwrap_err();
@@ -658,24 +661,24 @@ fn build_internal_always_gobal() {
         .add_build_internal("testlib", move |lib, version| {
             let (_, b) = called_clone.get();
             called_clone.replace((true, b));
-            let mut lib = pkg_config::Config::new()
+            let mut pkg_lib = pkg_config::Config::new()
                 .print_system_libs(false)
                 .cargo_metadata(false)
                 .probe(lib)
                 .unwrap();
-            lib.version = version.to_string();
-            Ok(Library::from_pkg_config(lib))
+            pkg_lib.version = version.to_string();
+            Ok(Library::from_pkg_config(&lib, pkg_lib))
         })
         .add_build_internal("testdata", move |lib, version| {
             let (a, _) = called_clone2.get();
             called_clone2.replace((a, true));
-            let mut lib = pkg_config::Config::new()
+            let mut pkg_lib = pkg_config::Config::new()
                 .print_system_libs(false)
                 .cargo_metadata(false)
                 .probe(lib)
                 .unwrap();
-            lib.version = version.to_string();
-            Ok(Library::from_pkg_config(lib))
+            pkg_lib.version = version.to_string();
+            Ok(Library::from_pkg_config(&lib, pkg_lib))
         });
 
     let (libraries, _flags) = config.probe_full().unwrap();
@@ -700,24 +703,24 @@ fn build_internal_gobal_override() {
     .add_build_internal("testlib", move |lib, version| {
         let (_, b) = called_clone.get();
         called_clone.replace((true, b));
-        let mut lib = pkg_config::Config::new()
+        let mut pkg_lib = pkg_config::Config::new()
             .print_system_libs(false)
             .cargo_metadata(false)
             .probe(lib)
             .unwrap();
-        lib.version = version.to_string();
-        Ok(Library::from_pkg_config(lib))
+        pkg_lib.version = version.to_string();
+        Ok(Library::from_pkg_config(&lib, pkg_lib))
     })
     .add_build_internal("testdata", move |lib, version| {
         let (a, _) = called_clone2.get();
         called_clone2.replace((a, true));
-        let mut lib = pkg_config::Config::new()
+        let mut pkg_lib = pkg_config::Config::new()
             .print_system_libs(false)
             .cargo_metadata(false)
             .probe(lib)
             .unwrap();
-        lib.version = version.to_string();
-        Ok(Library::from_pkg_config(lib))
+        pkg_lib.version = version.to_string();
+        Ok(Library::from_pkg_config(&lib, pkg_lib))
     });
 
     let (libraries, _flags) = config.probe_full().unwrap();

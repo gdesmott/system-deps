@@ -493,7 +493,7 @@ impl Config {
             let build_internal = self.get_build_internal_status(name)?;
 
             let library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
-                Library::from_env_variables()
+                Library::from_env_variables(name)
             } else if build_internal == BuildInternal::Always {
                 self.call_build_internal(lib_name, version)?
             } else {
@@ -503,7 +503,7 @@ impl Config {
                     .cargo_metadata(false)
                     .probe(lib_name)
                 {
-                    Ok(lib) => Library::from_pkg_config(lib),
+                    Ok(lib) => Library::from_pkg_config(&lib_name, lib),
                     Err(e) => {
                         if build_internal == BuildInternal::Auto {
                             // Try building the lib internally as a fallback
@@ -660,6 +660,8 @@ pub enum Source {
 #[derive(Debug)]
 /// A system dependency
 pub struct Library {
+    /// Name of the library
+    pub name: String,
     /// From where the library settings have been retrieved
     pub source: Source,
     /// libraries the linker should link on
@@ -679,8 +681,9 @@ pub struct Library {
 }
 
 impl Library {
-    fn from_pkg_config(l: pkg_config::Library) -> Self {
+    fn from_pkg_config(name: &str, l: pkg_config::Library) -> Self {
         Self {
+            name: name.to_string(),
             source: Source::PkgConfig,
             libs: l.libs,
             link_paths: l.link_paths,
@@ -692,8 +695,9 @@ impl Library {
         }
     }
 
-    fn from_env_variables() -> Self {
+    fn from_env_variables(name: &str) -> Self {
         Self {
+            name: name.to_string(),
             source: Source::EnvVariables,
             libs: Vec::new(),
             link_paths: Vec::new(),
@@ -745,7 +749,7 @@ impl Library {
             Err(_) => env::set_var("PKG_CONFIG_PATH", pkg_config_dir.as_ref()),
         }
 
-        let lib = pkg_config::Config::new()
+        let pkg_lib = pkg_config::Config::new()
             .atleast_version(&version)
             .print_system_libs(false)
             .cargo_metadata(false)
@@ -753,8 +757,8 @@ impl Library {
 
         env::set_var("PKG_CONFIG_PATH", &old.unwrap_or_else(|_| "".into()));
 
-        match lib {
-            Ok(lib) => Ok(Self::from_pkg_config(lib)),
+        match pkg_lib {
+            Ok(pkg_lib) => Ok(Self::from_pkg_config(&lib, pkg_lib)),
             Err(e) => Err(e.into()),
         }
     }
