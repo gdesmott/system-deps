@@ -214,6 +214,15 @@ fn feature_versions() {
     let testlib = libraries.get("testlib").unwrap();
     assert_eq!(testlib.name, "testlib-2.0");
     assert_eq!(testlib.version, "2.0.0");
+
+    // Takes the higher feature
+    let (libraries, _) = toml(
+        "toml-version-names",
+        vec![("CARGO_FEATURE_V2", ""), ("CARGO_FEATURE_V3", "")],
+    )
+    .unwrap();
+    let testlib = libraries.get("testlib").unwrap();
+    assert_eq!(testlib.name, "testlib-3.0");
 }
 
 #[test]
