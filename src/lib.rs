@@ -405,7 +405,7 @@ impl Config {
                                 if version_feature.starts_with('v') =>
                             {
                                 let mut override_version = None;
-                                let mut override_name = None;
+                                let mut override_name = lib_name;
 
                                 for (k, v) in version_settings {
                                     match (k.as_str(), v) {

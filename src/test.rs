@@ -185,8 +185,15 @@ fn unexpected_key() {
 #[test]
 fn override_name() {
     let (libraries, _) = toml("toml-override-name", vec![]).unwrap();
-    let testlib = libraries.get("testlib").unwrap();
-    assert_eq!(testlib.version, "2.0.0");
+    let testlib = libraries.get("test_lib").unwrap();
+    assert_eq!(testlib.name, "testlib");
+    assert_eq!(testlib.version, "1.2.3");
+
+    // Enable feature 1.2
+    let (libraries, _) = toml("toml-override-name", vec![("CARGO_FEATURE_V1_2", "")]).unwrap();
+    let testlib = libraries.get("test_lib").unwrap();
+    assert_eq!(testlib.name, "testlib");
+    assert_eq!(testlib.version, "1.2.3");
 }
 
 #[test]
@@ -743,10 +750,10 @@ fn build_internal_override_name() {
     let (libraries, called) = test_build_internal(
         "toml-override-name",
         vec![("SYSTEM_DEPS_BUILD_INTERNAL", "always")],
-        "testlib-2.0",
+        "testlib",
     )
     .unwrap();
 
     assert_eq!(called, true);
-    assert!(libraries.get("testlib").is_some());
+    assert!(libraries.get("test_lib").is_some());
 }
