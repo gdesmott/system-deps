@@ -68,8 +68,8 @@ fn good() {
 
     assert_flags(
         flags,
-        r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
-cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
+        r#"cargo:rustc-link-search=native=/usr/lib/
+cargo:rustc-link-search=framework=/usr/lib/
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
@@ -252,7 +252,7 @@ fn override_search_native() {
         flags,
         r#"cargo:rustc-link-search=native=/custom/path
 cargo:rustc-link-search=native=/other/path
-cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
+cargo:rustc-link-search=framework=/usr/lib/
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
@@ -287,7 +287,7 @@ fn override_search_framework() {
 
     assert_flags(
         flags,
-        r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
+        r#"cargo:rustc-link-search=native=/usr/lib/
 cargo:rustc-link-search=framework=/custom/path
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
@@ -323,8 +323,8 @@ fn override_lib() {
 
     assert_flags(
         flags,
-        r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
-cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
+        r#"cargo:rustc-link-search=native=/usr/lib/
+cargo:rustc-link-search=framework=/usr/lib/
 cargo:rustc-link-lib=overrided-test
 cargo:rustc-link-lib=other-test
 cargo:rustc-link-lib=framework=someframework
@@ -360,8 +360,8 @@ fn override_framework() {
 
     assert_flags(
         flags,
-        r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
-cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
+        r#"cargo:rustc-link-search=native=/usr/lib/
+cargo:rustc-link-search=framework=/usr/lib/
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=overrided-framework
 cargo:include=/usr/include/testlib
@@ -396,8 +396,8 @@ fn override_include() {
 
     assert_flags(
         flags,
-        r#"cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu
-cargo:rustc-link-search=framework=/usr/lib/x86_64-linux-gnu
+        r#"cargo:rustc-link-search=native=/usr/lib/
+cargo:rustc-link-search=framework=/usr/lib/
 cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/other/include
