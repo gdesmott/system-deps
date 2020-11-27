@@ -94,7 +94,7 @@
 //! for the given dependency. In this case at least SYSTEM_DEPS_$NAME_LIB or SYSTEM_DEPS_$NAME_LIB_FRAMEWORK should be defined as well.
 //!
 //! # Statically build system library
-//! `-sys` crates can provide support for building and statically link their underlying system libray as part of their build process.
+//! `-sys` crates can provide support for building and statically link their underlying system library as part of their build process.
 //! Here is how to do this in your `build.rs`:
 //! ```should_panic
 //! fn main() {
