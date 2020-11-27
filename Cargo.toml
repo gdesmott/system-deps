@@ -2,7 +2,7 @@
 name = "system-deps"
 version = "2.0.1"
 authors = ["Guillaume Desmottes <guillaume.desmottes@collabora.com>", "Josh Triplett <josh@joshtriplett.org>"]
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/gdesmott/system-deps"
 description = "Discover and configure system dependencies from declarative dependencies in Cargo.toml"
 keywords = ["pkg-config", "build-dependencies", "build-depends", "manifest", "metadata"]
