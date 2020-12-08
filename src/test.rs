@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use pkg_config;
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::env;
@@ -52,8 +51,8 @@ fn toml(
 
 fn assert_flags(flags: BuildFlags, expected: &str) {
     // flags ordering isn't guaranteed so sort them out before comparing
-    let flags = flags.to_string().split("\n").sorted().join("\n");
-    let expected = expected.to_string().split("\n").sorted().join("\n");
+    let flags = flags.to_string().split('\n').sorted().join("\n");
+    let expected = expected.to_string().split('\n').sorted().join("\n");
     assert_eq!(flags, expected);
 }
 

@@ -469,7 +469,7 @@ impl Config {
                     };
 
                     (
-                        lib_name.unwrap_or_else(|| name),
+                        lib_name.unwrap_or(name),
                         version.ok_or_else(|| {
                             Error::InvalidMetadata(format!("No version in {}.{}", key, name))
                         })?,
