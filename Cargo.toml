@@ -15,8 +15,8 @@ pkg-config = "0.3"
 toml = { version = "0.5", default-features = false }
 version-compare = "0.0.11"
 heck = "0.3"
-strum = "0.19"
-strum_macros = "0.19"
+strum = "0.20"
+strum_macros = "0.20"
 thiserror = "1"
 
 [dev-dependencies]
