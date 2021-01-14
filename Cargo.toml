@@ -21,4 +21,4 @@ thiserror = "1"
 
 [dev-dependencies]
 lazy_static = "1"
-itertools = "0.9"
+itertools = "0.10"
