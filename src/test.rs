@@ -765,4 +765,10 @@ fn system_libs() {
     let testlib = libraries.get("testlib64").unwrap();
     // Link path is stripped as it's a system lib (PKG_CONFIG_SYSTEM_LIBRARY_PATH)
     assert!(testlib.link_paths.is_empty());
+
+    // Request system libs to not be stripped
+    let config = create_config("toml-testlib64", vec![]).preserve_system_libs();
+    let (libraries, _) = config.probe_full().unwrap();
+    let testlib = libraries.get("testlib64").unwrap();
+    assert_eq!(testlib.link_paths[0], Path::new("/usr/lib64"));
 }

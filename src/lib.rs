@@ -281,6 +281,7 @@ type FnBuildInternal =
 pub struct Config {
     env: EnvVariables,
     build_internals: HashMap<String, Box<FnBuildInternal>>,
+    print_system_libs: bool,
 }
 
 impl Default for Config {
@@ -299,6 +300,18 @@ impl Config {
         Self {
             env,
             build_internals: HashMap::new(),
+            print_system_libs: false,
+        }
+    }
+
+    /// By default `pkg-config` strips libs flags pointing to standard system path, such as `-L/usr/lib64`.
+    /// Calling this function will ensure that those flags are preserved.
+    /// This is equivalent of setting the `PKG_CONFIG_ALLOW_SYSTEM_LIBS` environment variable when using `pkg-config` directly.
+    pub fn preserve_system_libs(self) -> Self {
+        Self {
+            env: self.env,
+            build_internals: self.build_internals,
+            print_system_libs: true,
         }
     }
 
@@ -334,6 +347,7 @@ impl Config {
         Self {
             env: self.env,
             build_internals,
+            print_system_libs: self.print_system_libs,
         }
     }
 
@@ -492,7 +506,7 @@ impl Config {
             } else {
                 match pkg_config::Config::new()
                     .atleast_version(&version)
-                    .print_system_libs(false)
+                    .print_system_libs(self.print_system_libs)
                     .cargo_metadata(false)
                     .probe(lib_name)
                 {
