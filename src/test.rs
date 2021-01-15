@@ -20,6 +20,7 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
             "PKG_CONFIG_PATH",
             &env::current_dir().unwrap().join("src").join("tests"),
         );
+        env::set_var("PKG_CONFIG_SYSTEM_LIBRARY_PATH", "/usr/lib64/");
     }
 
     let mut hash = HashMap::new();
@@ -755,4 +756,13 @@ fn build_internal_override_name() {
 
     assert_eq!(called, true);
     assert!(libraries.get("test_lib").is_some());
+}
+
+#[test]
+fn system_libs() {
+    let config = create_config("toml-testlib64", vec![]);
+    let (libraries, _) = config.probe_full().unwrap();
+    let testlib = libraries.get("testlib64").unwrap();
+    // Link path is stripped as it's a system lib (PKG_CONFIG_SYSTEM_LIBRARY_PATH)
+    assert!(testlib.link_paths.is_empty());
 }
