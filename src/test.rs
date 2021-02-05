@@ -6,6 +6,8 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Mutex;
 
+use assert_matches::assert_matches;
+
 use super::{BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, Library};
 
 lazy_static! {
@@ -91,12 +93,18 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
     );
 }
 
-fn toml_err(path: &str, err_starts_with: &str) {
-    let err = toml(path, vec![]).unwrap_err();
-    if !err.to_string().starts_with(err_starts_with) {
+fn toml_err(path: &str) -> Error {
+    toml(path, vec![]).unwrap_err()
+}
+
+fn toml_err_invalid(path: &str, err_ends_with: &str) {
+    let err = toml_err(path);
+    assert_matches!(err, Error::InvalidMetadata(_));
+
+    if !err.to_string().ends_with(err_ends_with) {
         panic!(
-            "Expected error to start with: {:?}\nGot error: {:?}",
-            err_starts_with, err
+            "Expected error to end with: {:?}\nGot error: {:?}",
+            err_ends_with, err
         );
     }
 }
@@ -125,59 +133,53 @@ fn toml_pkg_config_err_version(
 
 #[test]
 fn missing_file() {
-    toml_err("toml-missing-file", "Error opening");
+    assert_matches!(toml_err("toml-missing-file"), Error::FailToRead(_, _));
 }
 
 #[test]
 fn missing_key() {
-    toml_err("toml-missing-key", "No package.metadata.system-deps in");
+    toml_err_invalid("toml-missing-key", "no package.metadata.system-deps");
 }
 
 #[test]
 fn not_table() {
-    toml_err(
-        "toml-not-table",
-        "package.metadata.system-deps not a table in",
-    );
+    toml_err_invalid("toml-not-table", "package.metadata.system-deps not a table");
 }
 
 #[test]
 fn version_missing() {
-    toml_err(
-        "toml-version-missing",
-        "No version in package.metadata.system-deps.testlib",
-    );
+    toml_err_invalid("toml-version-missing", "No version defined for testlib");
 }
 
 #[test]
 fn version_not_string() {
-    toml_err(
+    toml_err_invalid(
         "toml-version-not-string",
-        "package.metadata.system-deps.testlib not a string or table",
+        "metadata.system-deps.testlib: not a string or table",
     );
 }
 
 #[test]
 fn version_in_table_not_string() {
-    toml_err(
+    toml_err_invalid(
         "toml-version-in-table-not-string",
-        "Unexpected key package.metadata.system-deps.testlib.version type integer",
+        "metadata.system-deps.testlib: unexpected key version type integer",
     );
 }
 
 #[test]
 fn feature_not_string() {
-    toml_err(
+    toml_err_invalid(
         "toml-feature-not-string",
-        "Unexpected key package.metadata.system-deps.testlib.feature type integer",
+        "metadata.system-deps.testlib: unexpected key feature type integer",
     );
 }
 
 #[test]
 fn unexpected_key() {
-    toml_err(
+    toml_err_invalid(
         "toml-unexpected-key",
-        "Unexpected key package.metadata.system-deps.testlib.color type string",
+        "metadata.system-deps.testlib: unexpected key color type string",
     );
 }
 

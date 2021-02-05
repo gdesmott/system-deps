@@ -123,14 +123,15 @@ use heck::ShoutySnakeCase;
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
-use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use strum::IntoEnumIterator;
 use strum_macros::{EnumIter, EnumString};
 use thiserror::Error;
 use version_compare::VersionCompare;
+
+mod metadata;
+use metadata::MetaData;
 
 /// system-deps errors
 #[derive(Error, Debug)]
@@ -201,17 +202,6 @@ enum EnvVariable {
     Include(String),
     NoPkgConfig(String),
     BuildInternal(Option<String>),
-}
-
-struct FeatureOverride<'a> {
-    version: &'a str,
-    name: Option<&'a String>,
-}
-
-impl<'a> FeatureOverride<'a> {
-    fn new(version: &'a str, name: Option<&'a String>) -> Self {
-        Self { version, name }
-    }
 }
 
 impl EnvVariable {
@@ -352,155 +342,68 @@ impl Config {
             .ok_or_else(|| Error::InvalidMetadata("$CARGO_MANIFEST_DIR not set".into()))?;
         let mut path = PathBuf::from(dir);
         path.push("Cargo.toml");
-        let mut manifest = fs::File::open(&path)
-            .map_err(|e| Error::FailToRead(format!("Error opening {}", path.display()), e))?;
-        let mut manifest_str = String::new();
-        manifest
-            .read_to_string(&mut manifest_str)
-            .map_err(|e| Error::FailToRead(format!("Error reading {}", path.display()), e))?;
-        let toml = manifest_str.parse::<toml::Value>().map_err(|e| {
-            Error::InvalidMetadata(format!(
-                "Error parsing TOML from {}: {:?}",
-                path.display(),
-                e
-            ))
-        })?;
-        let key = "package.metadata.system-deps";
-        let meta = toml
-            .get("package")
-            .and_then(|v| v.get("metadata"))
-            .and_then(|v| v.get("system-deps"))
-            .ok_or_else(|| Error::InvalidMetadata(format!("No {} in {}", key, path.display())))?;
-        let table = meta.as_table().ok_or_else(|| {
-            Error::InvalidMetadata(format!("{} not a table in {}", key, path.display()))
-        })?;
+
+        let metadata = MetaData::from_file(&path)?;
+
         let mut libraries = HashMap::new();
-        for (name, value) in table {
-            let (lib_name, version) = match value {
-                toml::Value::String(ref s) => (name, s.as_str()),
-                toml::Value::Table(ref t) => {
-                    let mut feature = None;
-                    let mut version = None;
-                    let mut lib_name = None;
-                    let mut enabled_feature_overrides = Vec::new();
-                    for (tname, tvalue) in t {
-                        match (tname.as_str(), tvalue) {
-                            ("feature", &toml::Value::String(ref s)) => {
-                                feature = Some(s);
-                            }
-                            ("version", &toml::Value::String(ref s)) => {
-                                version = Some(s);
-                            }
-                            ("name", &toml::Value::String(ref s)) => {
-                                lib_name = Some(s);
-                            }
-                            (version_feature, &toml::Value::Table(ref version_settings))
-                                if version_feature.starts_with('v') =>
-                            {
-                                let mut override_version = None;
-                                let mut override_name = lib_name;
 
-                                for (k, v) in version_settings {
-                                    match (k.as_str(), v) {
-                                        ("version", &toml::Value::String(ref feat_vers)) => {
-                                            override_version = Some(feat_vers);
-                                        }
-                                        ("name", &toml::Value::String(ref feat_name)) => {
-                                            override_name = Some(feat_name);
-                                        }
-                                        _ => {
-                                            return Err(Error::InvalidMetadata(format!(
-                                            "Unexpected version settings key: {}.{}.{}.{} type: {}",
-                                            key,
-                                            name,
-                                            tname,
-                                            k,
-                                            v.type_str()
-                                        )))
-                                        }
-                                    }
-                                }
+        for dep in metadata.deps.iter() {
+            let mut enabled_feature_overrides = Vec::new();
 
-                                let override_version = override_version.ok_or_else(|| {
-                                    Error::InvalidMetadata(format!(
-                                        "Missing version field for {}.{}.{}",
-                                        key, name, tvalue
-                                    ))
-                                })?;
-
-                                if self.has_feature(&version_feature) {
-                                    let f_override =
-                                        FeatureOverride::new(&override_version, override_name);
-                                    enabled_feature_overrides.push(f_override);
-                                }
-                            }
-                            _ => {
-                                return Err(Error::InvalidMetadata(format!(
-                                    "Unexpected key {}.{}.{} type {}",
-                                    key,
-                                    name,
-                                    tname,
-                                    tvalue.type_str()
-                                )))
-                            }
-                        }
-                    }
-                    if let Some(feature) = feature {
-                        if !self.has_feature(feature) {
-                            continue;
-                        }
-                    }
-
-                    let (version, lib_name) = {
-                        // Pick the highest feature enabled version
-                        if !enabled_feature_overrides.is_empty() {
-                            enabled_feature_overrides.sort_by(|a, b| {
-                                VersionCompare::compare(&a.version, &b.version)
-                                    .expect("failed to compare versions")
-                                    .ord()
-                                    .expect("invalid version")
-                            });
-                            let FeatureOverride { version, name } =
-                                enabled_feature_overrides.into_iter().last().unwrap();
-                            (Some(version), name)
-                        } else {
-                            (version.map(|v| v.as_str()), lib_name)
-                        }
-                    };
-
-                    (
-                        lib_name.unwrap_or(name),
-                        version.ok_or_else(|| {
-                            Error::InvalidMetadata(format!("No version in {}.{}", key, name))
-                        })?,
-                    )
+            for o in dep.version_overrides.iter() {
+                if self.has_feature(&o.key) {
+                    enabled_feature_overrides.push(o);
                 }
-                _ => {
-                    return Err(Error::InvalidMetadata(format!(
-                        "{}.{} not a string or table",
-                        key, name
-                    )))
+            }
+
+            if let Some(feature) = dep.feature.as_ref() {
+                if !self.has_feature(&feature) {
+                    continue;
+                }
+            }
+
+            let (version, lib_name) = {
+                // Pick the highest feature enabled version
+                if !enabled_feature_overrides.is_empty() {
+                    enabled_feature_overrides.sort_by(|a, b| {
+                        VersionCompare::compare(&a.version, &b.version)
+                            .expect("failed to compare versions")
+                            .ord()
+                            .expect("invalid version")
+                    });
+                    let highest = enabled_feature_overrides.into_iter().last().unwrap();
+                    (
+                        Some(&highest.version),
+                        highest.name.clone().unwrap_or_else(|| dep.lib_name()),
+                    )
+                } else {
+                    (dep.version.as_ref(), dep.lib_name())
                 }
             };
 
+            let version = version.ok_or_else(|| {
+                Error::InvalidMetadata(format!("No version defined for {}", dep.key))
+            })?;
+
+            let name = &dep.key;
             let build_internal = self.get_build_internal_status(name)?;
 
             let library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables(name)
             } else if build_internal == BuildInternal::Always {
-                self.call_build_internal(lib_name, version)?
+                self.call_build_internal(&lib_name, &version)?
             } else {
                 match pkg_config::Config::new()
                     .atleast_version(&version)
                     .print_system_libs(false)
                     .cargo_metadata(false)
-                    .probe(lib_name)
+                    .probe(&lib_name)
                 {
                     Ok(lib) => Library::from_pkg_config(&lib_name, lib),
                     Err(e) => {
                         if build_internal == BuildInternal::Auto {
                             // Try building the lib internally as a fallback
-                            self.call_build_internal(name, version)?
+                            self.call_build_internal(name, &version)?
                         } else {
                             return Err(e.into());
                         }
