@@ -205,11 +205,9 @@ fn feature_versions() {
     assert_eq!(testdata.version, "4.5.6");
 
     // version 5 is not available
-    env::set_var("CARGO_FEATURE_V5", "");
     toml_pkg_config_err_version("toml-feature-versions", "5", vec![("CARGO_FEATURE_V5", "")]);
 
     // We check the highest version enabled by features
-    env::set_var("CARGO_FEATURE_V6", "");
     toml_pkg_config_err_version("toml-feature-versions", "6", vec![("CARGO_FEATURE_V6", "")]);
 
     let (libraries, _) = toml("toml-version-names", vec![]).unwrap();
