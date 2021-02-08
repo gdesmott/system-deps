@@ -294,6 +294,8 @@ impl Config {
 
     /// Probe all libraries configured in the Cargo.toml
     /// `[package.metadata.system-deps]` section.
+    ///
+    /// The returned hash is using the the `toml` key defining the dependency as key.
     pub fn probe(self) -> Result<HashMap<String, Library>, Error> {
         let (libraries, flags) = self.probe_full()?;
 
