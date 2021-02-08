@@ -27,12 +27,24 @@
 //! }
 //! ```
 //!
-//! # Optional dependency
+//! # Feature-specific dependency
 //! You can easily declare an optional system dependency by associating it with a feature:
 //!
 //! ```toml
 //! [package.metadata.system-deps]
 //! testdata = { version = "4.5", feature = "use-testdata" }
+//! ```
+//!
+//! `system-deps` will check for `testdata` only if the `use-testdata` feature has been enabled.
+//!
+//! # Optional dependency
+//!
+//! Another option is to use the `optional` setting, which can also be used using [features versions](#feature-versions):
+//!
+//! ```toml
+//! [package.metadata.system-deps]
+//! testdata = { version = "4.5", optional = true }
+//! testmore = { version = "2", v3 = { version = "3.0", optional = true }}
 //! ```
 //!
 //! # Overriding library name
@@ -364,7 +376,7 @@ impl Config {
                 }
             }
 
-            let (version, lib_name) = {
+            let (version, lib_name, optional) = {
                 // Pick the highest feature enabled version
                 if !enabled_feature_overrides.is_empty() {
                     enabled_feature_overrides.sort_by(|a, b| {
@@ -377,9 +389,10 @@ impl Config {
                     (
                         Some(&highest.version),
                         highest.name.clone().unwrap_or_else(|| dep.lib_name()),
+                        highest.optional.unwrap_or(dep.optional),
                     )
                 } else {
-                    (dep.version.as_ref(), dep.lib_name())
+                    (dep.version.as_ref(), dep.lib_name(), dep.optional)
                 }
             };
 
@@ -406,6 +419,9 @@ impl Config {
                         if build_internal == BuildInternal::Auto {
                             // Try building the lib internally as a fallback
                             self.call_build_internal(name, &version)?
+                        } else if optional {
+                            // If the dep is optional just skip it
+                            continue;
                         } else {
                             return Err(e.into());
                         }

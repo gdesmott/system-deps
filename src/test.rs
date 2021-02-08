@@ -756,3 +756,19 @@ fn build_internal_override_name() {
     assert_eq!(called, true);
     assert!(libraries.get("test_lib").is_some());
 }
+
+#[test]
+fn optional() {
+    // without any feature, testmore is not optional
+    toml_pkg_config_err_version("toml-optional", "2", vec![]);
+
+    // when enabling v3 testmore is now optional
+    let config = create_config("toml-optional", vec![("CARGO_FEATURE_V3", "")]);
+    let (libs, _) = config.probe_full().unwrap();
+    assert!(libs.get("testlib").is_some());
+    assert!(libs.get("testmore").is_none());
+    assert!(libs.get("testbadger").is_none());
+
+    // testlib is no longer optional if enabling v5
+    toml_pkg_config_err_version("toml-optional", "5.0", vec![("CARGO_FEATURE_V5", "")]);
+}

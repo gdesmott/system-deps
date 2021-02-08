@@ -16,6 +16,7 @@ pub(crate) struct Dependency {
     pub(crate) version: Option<String>,
     pub(crate) name: Option<String>,
     pub(crate) feature: Option<String>,
+    pub(crate) optional: bool,
     pub(crate) version_overrides: Vec<VersionOverride>,
 }
 
@@ -26,6 +27,7 @@ impl Dependency {
             version: None,
             name: None,
             feature: None,
+            optional: false,
             version_overrides: Vec::new(),
         }
     }
@@ -40,12 +42,14 @@ pub(crate) struct VersionOverride {
     pub(crate) key: String,
     pub(crate) version: String,
     pub(crate) name: Option<String>,
+    pub(crate) optional: Option<bool>,
 }
 
 struct VersionOverrideBuilder {
     version_id: String,
     version: Option<String>,
     full_name: Option<String>,
+    optional: Option<bool>,
 }
 
 impl VersionOverrideBuilder {
@@ -54,6 +58,7 @@ impl VersionOverrideBuilder {
             version_id: version_id.to_string(),
             version: None,
             full_name: None,
+            optional: None,
         }
     }
 
@@ -66,6 +71,7 @@ impl VersionOverrideBuilder {
             key: self.version_id,
             version,
             name: self.full_name,
+            optional: self.optional,
         })
     }
 }
@@ -143,6 +149,9 @@ impl MetaData {
                 ("name", &toml::Value::String(ref s)) => {
                     dep.name = Some(s.clone());
                 }
+                ("optional", &toml::Value::Boolean(optional)) => {
+                    dep.optional = optional;
+                }
                 (version_feature, &toml::Value::Table(ref version_settings))
                     if version_feature.starts_with('v') =>
                 {
@@ -155,6 +164,9 @@ impl MetaData {
                             }
                             ("name", &toml::Value::String(ref feat_name)) => {
                                 builder.full_name = Some(feat_name.into());
+                            }
+                            ("optional", &toml::Value::Boolean(optional)) => {
+                                builder.optional = Some(optional);
                             }
                             _ => {
                                 bail!(
@@ -207,6 +219,7 @@ mod tests {
                         version: Some("4".into()),
                         name: None,
                         feature: None,
+                        optional: false,
                         version_overrides: vec![],
                     },
                     Dependency {
@@ -214,6 +227,7 @@ mod tests {
                         version: Some("1".into()),
                         name: None,
                         feature: Some("test-feature".into()),
+                        optional: false,
                         version_overrides: vec![],
                     },
                     Dependency {
@@ -221,6 +235,7 @@ mod tests {
                         version: Some("2".into()),
                         name: None,
                         feature: Some("another-test-feature".into()),
+                        optional: false,
                         version_overrides: vec![],
                     }
                 ]
@@ -248,10 +263,12 @@ mod tests {
                     version: Some("1.0".into()),
                     name: Some("testlib".into()),
                     feature: None,
+                    optional: false,
                     version_overrides: vec![VersionOverride {
                         key: "v1_2".into(),
                         version: "1.2".into(),
                         name: None,
+                        optional: None,
                     }],
                 },]
             }
@@ -270,19 +287,69 @@ mod tests {
                     version: Some("4".into()),
                     name: None,
                     feature: None,
+                    optional: false,
                     version_overrides: vec![
                         VersionOverride {
                             key: "v5".into(),
                             version: "5".into(),
                             name: None,
+                            optional: None,
                         },
                         VersionOverride {
                             key: "v6".into(),
                             version: "6".into(),
                             name: None,
+                            optional: None,
                         },
                     ],
                 },]
+            }
+        )
+    }
+
+    #[test]
+    fn parse_optional() {
+        let m = parse_file("toml-optional").unwrap();
+
+        assert_eq!(
+            m,
+            MetaData {
+                deps: vec![
+                    Dependency {
+                        key: "testbadger".into(),
+                        version: Some("1".into()),
+                        name: None,
+                        feature: None,
+                        optional: true,
+                        version_overrides: vec![],
+                    },
+                    Dependency {
+                        key: "testlib".into(),
+                        version: Some("1.0".into()),
+                        name: None,
+                        feature: None,
+                        optional: true,
+                        version_overrides: vec![VersionOverride {
+                            key: "v5".into(),
+                            version: "5.0".into(),
+                            name: Some("testlib-5.0".into()),
+                            optional: Some(false),
+                        },],
+                    },
+                    Dependency {
+                        key: "testmore".into(),
+                        version: Some("2".into()),
+                        name: None,
+                        feature: None,
+                        optional: false,
+                        version_overrides: vec![VersionOverride {
+                            key: "v3".into(),
+                            version: "3.0".into(),
+                            name: None,
+                            optional: Some(true),
+                        },],
+                    },
+                ]
             }
         )
     }

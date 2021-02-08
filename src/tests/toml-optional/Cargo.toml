@@ -1,0 +1,4 @@
+[package.metadata.system-deps]
+testlib = { version = "1.0", optional = true, v5 = { version = "5.0", name = "testlib-5.0", optional = false }}
+testmore = { version = "2", v3 = { version = "3.0", optional = true }}
+testbadger = { version = "1", optional = true }
