@@ -43,8 +43,17 @@
 //!
 //! ```toml
 //! [package.metadata.system-deps]
-//! testdata = { version = "4.5", optional = true }
+//! test-data = { version = "4.5", optional = true }
 //! testmore = { version = "2", v3 = { version = "3.0", optional = true }}
+//! ```
+//!
+//! `system-deps` will automatically export for each dependency a feature `system_deps_have_$DEP` where `$DEP`
+//! is the `toml` key defining the dependency in [snake_case](https://en.wikipedia.org/wiki/Snake_case).
+//! This can be used to check if an optional dependency has been found or not:
+//!
+//! ```
+//! #[cfg(system_deps_have_testdata)]
+//! println!("found test-data");
 //! ```
 //!
 //! # Overriding library name
@@ -131,7 +140,7 @@ extern crate lazy_static;
 #[cfg(test)]
 mod test;
 
-use heck::ShoutySnakeCase;
+use heck::{ShoutySnakeCase, SnakeCase};
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
@@ -313,6 +322,10 @@ impl Config {
 
         // Output cargo flags
         println!("{}", flags);
+
+        for (name, _) in libraries.iter() {
+            println!("cargo:rustc-cfg=system_deps_have_{}", name.to_snake_case());
+        }
 
         Ok(libraries)
     }
