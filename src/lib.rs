@@ -200,6 +200,22 @@ impl Libraries {
         self.libs
     }
 
+    /// Retrieve details about a system dependency.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`: the name of the `toml` key defining the dependency in `Cargo.toml`
+    pub fn get_by_name(&self, name: &str) -> Option<&Library> {
+        self.libs.get(name)
+    }
+
+    /// An iterator visiting all system dependencies in arbitrary order.
+    /// The first element of the tuple is the name of the `toml` key defining the
+    /// dependency in `Cargo.toml`.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &Library)> {
+        self.libs.iter().map(|(k, v)| (k.as_str(), v))
+    }
+
     fn add(&mut self, name: &str, lib: Library) {
         self.libs.insert(name.to_string(), lib);
     }
@@ -412,7 +428,8 @@ impl Config {
     ///
     /// The returned hash is using the the `toml` key defining the dependency as key.
     pub fn probe(self) -> Result<HashMap<String, Library>, Error> {
-        let (libraries, flags) = self.probe_full()?;
+        let libraries = self.probe_full()?;
+        let flags = libraries.gen_flags()?;
 
         // Output cargo flags
         println!("{}", flags);
@@ -421,7 +438,7 @@ impl Config {
             println!("cargo:rustc-cfg=system_deps_have_{}", name.to_snake_case());
         }
 
-        Ok(libraries)
+        Ok(libraries.into_hash())
     }
 
     /// Add hook so system-deps can internally build library `name` if requested by user.
@@ -448,12 +465,11 @@ impl Config {
         }
     }
 
-    fn probe_full(mut self) -> Result<(HashMap<String, Library>, BuildFlags), Error> {
+    fn probe_full(mut self) -> Result<Libraries, Error> {
         let mut libraries = self.probe_pkg_config()?;
         libraries.override_from_flags(&self.env);
-        let flags = libraries.gen_flags()?;
 
-        Ok((libraries.into_hash(), flags))
+        Ok(libraries)
     }
 
     fn probe_pkg_config(&mut self) -> Result<Libraries, Error> {

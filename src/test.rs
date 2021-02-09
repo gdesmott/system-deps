@@ -8,6 +8,8 @@ use std::sync::Mutex;
 
 use assert_matches::assert_matches;
 
+use crate::Libraries;
+
 use super::{BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, Library};
 
 lazy_static! {
@@ -47,8 +49,10 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
 fn toml(
     path: &str,
     env: Vec<(&'static str, &'static str)>,
-) -> Result<(std::collections::HashMap<String, Library>, BuildFlags), Error> {
-    create_config(path, env).probe_full()
+) -> Result<(Libraries, BuildFlags), Error> {
+    let libs = create_config(path, env).probe_full()?;
+    let flags = libs.gen_flags()?;
+    Ok((libs, flags))
 }
 
 fn assert_flags(flags: BuildFlags, expected: &str) {
@@ -61,11 +65,13 @@ fn assert_flags(flags: BuildFlags, expected: &str) {
 #[test]
 fn good() {
     let (libraries, flags) = toml("toml-good", vec![]).unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.version, "1.2.3");
-    let testdata = libraries.get("testdata").unwrap();
+    let testdata = libraries.get_by_name("testdata").unwrap();
     assert_eq!(testdata.version, "4.5.6");
-    assert!(libraries.get("testmore").is_none());
+    assert!(libraries.get_by_name("testmore").is_none());
+
+    assert_eq!(libraries.iter().count(), 2);
 
     assert_flags(
         flags,
@@ -186,13 +192,13 @@ fn unexpected_key() {
 #[test]
 fn override_name() {
     let (libraries, _) = toml("toml-override-name", vec![]).unwrap();
-    let testlib = libraries.get("test_lib").unwrap();
+    let testlib = libraries.get_by_name("test_lib").unwrap();
     assert_eq!(testlib.name, "testlib");
     assert_eq!(testlib.version, "1.2.3");
 
     // Enable feature 1.2
     let (libraries, _) = toml("toml-override-name", vec![("CARGO_FEATURE_V1_2", "")]).unwrap();
-    let testlib = libraries.get("test_lib").unwrap();
+    let testlib = libraries.get_by_name("test_lib").unwrap();
     assert_eq!(testlib.name, "testlib");
     assert_eq!(testlib.version, "1.2.3");
 }
@@ -200,7 +206,7 @@ fn override_name() {
 #[test]
 fn feature_versions() {
     let (libraries, _) = toml("toml-feature-versions", vec![]).unwrap();
-    let testdata = libraries.get("testdata").unwrap();
+    let testdata = libraries.get_by_name("testdata").unwrap();
     assert_eq!(testdata.name, "testdata");
     assert_eq!(testdata.version, "4.5.6");
 
@@ -211,13 +217,13 @@ fn feature_versions() {
     toml_pkg_config_err_version("toml-feature-versions", "6", vec![("CARGO_FEATURE_V6", "")]);
 
     let (libraries, _) = toml("toml-version-names", vec![]).unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.name, "testlib");
     assert_eq!(testlib.version, "1.2.3");
 
     // Enable feature v2
     let (libraries, _) = toml("toml-version-names", vec![("CARGO_FEATURE_V2", "")]).unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.name, "testlib-2.0");
     assert_eq!(testlib.version, "2.0.0");
 
@@ -227,7 +233,7 @@ fn feature_versions() {
         vec![("CARGO_FEATURE_V2", ""), ("CARGO_FEATURE_V3", "")],
     )
     .unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.name, "testlib-3.0");
 }
 
@@ -241,7 +247,7 @@ fn override_search_native() {
         )],
     )
     .unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(
         testlib.link_paths,
         vec![Path::new("/custom/path"), Path::new("/other/path")]
@@ -281,7 +287,7 @@ fn override_search_framework() {
         vec![("SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK", "/custom/path")],
     )
     .unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.framework_paths, vec![Path::new("/custom/path")]);
 
     assert_flags(
@@ -317,7 +323,7 @@ fn override_lib() {
         vec![("SYSTEM_DEPS_TESTLIB_LIB", "overrided-test other-test")],
     )
     .unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.libs, vec!["overrided-test", "other-test"]);
 
     assert_flags(
@@ -354,7 +360,7 @@ fn override_framework() {
         vec![("SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK", "overrided-framework")],
     )
     .unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.frameworks, vec!["overrided-framework"]);
 
     assert_flags(
@@ -390,7 +396,7 @@ fn override_include() {
         vec![("SYSTEM_DEPS_TESTLIB_INCLUDE", "/other/include")],
     )
     .unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.include_paths, vec![Path::new("/other/include")]);
 
     assert_flags(
@@ -432,7 +438,7 @@ fn override_unset() {
         ],
     )
     .unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.link_paths, Vec::<PathBuf>::new());
     assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
     assert_eq!(testlib.libs, Vec::<String>::new());
@@ -470,7 +476,7 @@ fn override_no_pkg_config() {
         ],
     )
     .unwrap();
-    let testlib = libraries.get("testlib").unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.link_paths, Vec::<PathBuf>::new());
     assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
     assert_eq!(testlib.libs, vec!["custom-lib"]);
@@ -516,7 +522,7 @@ fn test_build_internal(
     path: &'static str,
     env: Vec<(&'static str, &'static str)>,
     expected_lib: &'static str,
-) -> Result<(HashMap<String, Library>, bool), (Error, bool)> {
+) -> Result<(Libraries, bool), (Error, bool)> {
     let called = Rc::new(Cell::new(false));
     let called_clone = called.clone();
     let config = create_config(path, env).add_build_internal(expected_lib, move |lib, version| {
@@ -532,7 +538,7 @@ fn test_build_internal(
     });
 
     match config.probe_full() {
-        Ok((libraries, _flags)) => Ok((libraries, called.get())),
+        Ok(libraries) => Ok((libraries, called.get())),
         Err(e) => Err((e, called.get())),
     }
 }
@@ -547,7 +553,7 @@ fn build_internal_always() {
     .unwrap();
 
     assert_eq!(called, true);
-    assert!(libraries.get("testlib").is_some());
+    assert!(libraries.get_by_name("testlib").is_some());
 }
 
 #[test]
@@ -561,7 +567,7 @@ fn build_internal_auto_not_called() {
     .unwrap();
 
     assert_eq!(called, false);
-    assert!(libraries.get("testlib").is_some());
+    assert!(libraries.get_by_name("testlib").is_some());
 }
 
 #[test]
@@ -578,7 +584,7 @@ fn build_internal_auto_called() {
     .unwrap();
 
     assert_eq!(called, true);
-    assert!(libraries.get("testdata").is_some());
+    assert!(libraries.get_by_name("testdata").is_some());
 }
 
 #[test]
@@ -696,10 +702,10 @@ fn build_internal_always_gobal() {
             Ok(Library::from_pkg_config(&lib, pkg_lib))
         });
 
-    let (libraries, _flags) = config.probe_full().unwrap();
+    let libraries = config.probe_full().unwrap();
     assert_eq!(called.get(), (true, true));
-    assert!(libraries.get("testlib").is_some());
-    assert!(libraries.get("testdata").is_some());
+    assert!(libraries.get_by_name("testlib").is_some());
+    assert!(libraries.get_by_name("testdata").is_some());
 }
 
 #[test]
@@ -738,10 +744,10 @@ fn build_internal_gobal_override() {
         Ok(Library::from_pkg_config(&lib, pkg_lib))
     });
 
-    let (libraries, _flags) = config.probe_full().unwrap();
+    let libraries = config.probe_full().unwrap();
     assert_eq!(called.get(), (false, true));
-    assert!(libraries.get("testlib").is_some());
-    assert!(libraries.get("testdata").is_some());
+    assert!(libraries.get_by_name("testlib").is_some());
+    assert!(libraries.get_by_name("testdata").is_some());
 }
 
 #[test]
@@ -754,7 +760,7 @@ fn build_internal_override_name() {
     .unwrap();
 
     assert_eq!(called, true);
-    assert!(libraries.get("test_lib").is_some());
+    assert!(libraries.get_by_name("test_lib").is_some());
 }
 
 #[test]
@@ -764,10 +770,10 @@ fn optional() {
 
     // when enabling v3 testmore is now optional
     let config = create_config("toml-optional", vec![("CARGO_FEATURE_V3", "")]);
-    let (libs, _) = config.probe_full().unwrap();
-    assert!(libs.get("testlib").is_some());
-    assert!(libs.get("testmore").is_none());
-    assert!(libs.get("testbadger").is_none());
+    let libs = config.probe_full().unwrap();
+    assert!(libs.get_by_name("testlib").is_some());
+    assert!(libs.get_by_name("testmore").is_none());
+    assert!(libs.get_by_name("testbadger").is_none());
 
     // testlib is no longer optional if enabling v5
     toml_pkg_config_err_version("toml-optional", "5.0", vec![("CARGO_FEATURE_V5", "")]);
