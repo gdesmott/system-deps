@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use assert_matches::assert_matches;
 
-use crate::Libraries;
+use crate::Dependencies;
 
 use super::{BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, Library};
 
@@ -49,7 +49,7 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
 fn toml(
     path: &str,
     env: Vec<(&'static str, &'static str)>,
-) -> Result<(Libraries, BuildFlags), Error> {
+) -> Result<(Dependencies, BuildFlags), Error> {
     let libs = create_config(path, env).probe_full()?;
     let flags = libs.gen_flags()?;
     Ok((libs, flags))
@@ -528,7 +528,7 @@ fn test_build_internal(
     path: &'static str,
     env: Vec<(&'static str, &'static str)>,
     expected_lib: &'static str,
-) -> Result<(Libraries, bool), (Error, bool)> {
+) -> Result<(Dependencies, bool), (Error, bool)> {
     let called = Rc::new(Cell::new(false));
     let called_clone = called.clone();
     let config = create_config(path, env).add_build_internal(expected_lib, move |lib, version| {

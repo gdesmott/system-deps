@@ -193,11 +193,11 @@ pub enum Error {
 
 #[derive(Debug, Default)]
 /// All the system dependencies retrieved by [Config::probe].
-pub struct Libraries {
+pub struct Dependencies {
     libs: HashMap<String, Library>,
 }
 
-impl Libraries {
+impl Dependencies {
     /// Retrieve details about a system dependency.
     ///
     /// # Arguments
@@ -486,7 +486,7 @@ impl Config {
     /// `[package.metadata.system-deps]` section.
     ///
     /// The returned hash is using the the `toml` key defining the dependency as key.
-    pub fn probe(self) -> Result<Libraries, Error> {
+    pub fn probe(self) -> Result<Dependencies, Error> {
         let libraries = self.probe_full()?;
         let flags = libraries.gen_flags()?;
 
@@ -524,14 +524,14 @@ impl Config {
         }
     }
 
-    fn probe_full(mut self) -> Result<Libraries, Error> {
+    fn probe_full(mut self) -> Result<Dependencies, Error> {
         let mut libraries = self.probe_pkg_config()?;
         libraries.override_from_flags(&self.env);
 
         Ok(libraries)
     }
 
-    fn probe_pkg_config(&mut self) -> Result<Libraries, Error> {
+    fn probe_pkg_config(&mut self) -> Result<Dependencies, Error> {
         let dir = self
             .env
             .get("CARGO_MANIFEST_DIR")
@@ -541,7 +541,7 @@ impl Config {
 
         let metadata = MetaData::from_file(&path)?;
 
-        let mut libraries = Libraries::default();
+        let mut libraries = Dependencies::default();
 
         for dep in metadata.deps.iter() {
             let mut enabled_feature_overrides = Vec::new();
