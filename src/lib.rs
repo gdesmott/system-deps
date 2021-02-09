@@ -190,6 +190,100 @@ pub enum Error {
     BuildInternalWrongVersion(String, String, String),
 }
 
+#[derive(Debug, Default)]
+struct Libraries {
+    libs: HashMap<String, Library>,
+}
+
+impl Libraries {
+    fn into_hash(self) -> HashMap<String, Library> {
+        self.libs
+    }
+
+    fn add(&mut self, name: &str, lib: Library) {
+        self.libs.insert(name.to_string(), lib);
+    }
+
+    fn override_from_flags(&mut self, env: &EnvVariables) {
+        for (name, lib) in self.libs.iter_mut() {
+            if let Some(value) = env.get(&EnvVariable::new_search_native(name)) {
+                lib.link_paths = split_paths(&value);
+            }
+            if let Some(value) = env.get(&EnvVariable::new_search_framework(name)) {
+                lib.framework_paths = split_paths(&value);
+            }
+            if let Some(value) = env.get(&EnvVariable::new_lib(name)) {
+                lib.libs = split_string(&value);
+            }
+            if let Some(value) = env.get(&EnvVariable::new_lib_framework(name)) {
+                lib.frameworks = split_string(&value);
+            }
+            if let Some(value) = env.get(&EnvVariable::new_include(name)) {
+                lib.include_paths = split_paths(&value);
+            }
+        }
+    }
+
+    fn gen_flags(&self) -> Result<BuildFlags, Error> {
+        let mut flags = BuildFlags::new();
+        let mut include_paths = Vec::new();
+
+        for (name, lib) in self.libs.iter() {
+            include_paths.extend(lib.include_paths.clone());
+
+            if lib.source == Source::EnvVariables
+                && lib.libs.is_empty()
+                && lib.frameworks.is_empty()
+            {
+                return Err(Error::MissingLib(name.clone()));
+            }
+
+            lib.link_paths
+                .iter()
+                .for_each(|l| flags.add(BuildFlag::SearchNative(l.to_string_lossy().to_string())));
+            lib.framework_paths.iter().for_each(|f| {
+                flags.add(BuildFlag::SearchFramework(f.to_string_lossy().to_string()))
+            });
+            lib.libs
+                .iter()
+                .for_each(|l| flags.add(BuildFlag::Lib(l.clone())));
+            lib.frameworks
+                .iter()
+                .for_each(|f| flags.add(BuildFlag::LibFramework(f.clone())));
+        }
+
+        // Export DEP_$CRATE_INCLUDE env variable with the headers paths,
+        // see https://kornel.ski/rust-sys-crate#headers
+        if !include_paths.is_empty() {
+            if let Ok(paths) = std::env::join_paths(include_paths) {
+                flags.add(BuildFlag::Include(paths.to_string_lossy().to_string()));
+            }
+        }
+
+        // Export cargo:rerun-if-env-changed instructions for all env variables affecting system-deps behaviour
+        flags.add(BuildFlag::RerunIfEnvChanged(
+            EnvVariable::new_build_internal(None),
+        ));
+
+        for (name, _lib) in self.libs.iter() {
+            for var in EnvVariable::iter() {
+                let var = match var {
+                    EnvVariable::Lib(_) => EnvVariable::new_lib(name),
+                    EnvVariable::LibFramework(_) => EnvVariable::new_lib_framework(name),
+                    EnvVariable::SearchNative(_) => EnvVariable::new_search_native(name),
+                    EnvVariable::SearchFramework(_) => EnvVariable::new_search_framework(name),
+                    EnvVariable::Include(_) => EnvVariable::new_include(name),
+                    EnvVariable::NoPkgConfig(_) => EnvVariable::new_no_pkg_config(name),
+                    EnvVariable::BuildInternal(_) => EnvVariable::new_build_internal(Some(name)),
+                };
+                flags.add(BuildFlag::RerunIfEnvChanged(var));
+            }
+        }
+
+        Ok(flags)
+    }
+}
+
 #[derive(Error, Debug)]
 /// Error used in return value of `Config::add_build_internal` closures
 pub enum BuildInternalClosureError {
@@ -356,13 +450,13 @@ impl Config {
 
     fn probe_full(mut self) -> Result<(HashMap<String, Library>, BuildFlags), Error> {
         let mut libraries = self.probe_pkg_config()?;
-        self.override_from_flags(&mut libraries);
-        let flags = self.gen_flags(&libraries)?;
+        libraries.override_from_flags(&self.env);
+        let flags = libraries.gen_flags()?;
 
-        Ok((libraries, flags))
+        Ok((libraries.into_hash(), flags))
     }
 
-    fn probe_pkg_config(&mut self) -> Result<HashMap<String, Library>, Error> {
+    fn probe_pkg_config(&mut self) -> Result<Libraries, Error> {
         let dir = self
             .env
             .get("CARGO_MANIFEST_DIR")
@@ -372,7 +466,7 @@ impl Config {
 
         let metadata = MetaData::from_file(&path)?;
 
-        let mut libraries = HashMap::new();
+        let mut libraries = Libraries::default();
 
         for dep in metadata.deps.iter() {
             let mut enabled_feature_overrides = Vec::new();
@@ -442,7 +536,7 @@ impl Config {
                 }
             };
 
-            libraries.insert(name.clone(), library);
+            libraries.add(name, library);
         }
         Ok(libraries)
     }
@@ -488,85 +582,6 @@ impl Config {
             )),
             _ => Ok(lib),
         }
-    }
-
-    fn override_from_flags(&self, libraries: &mut HashMap<String, Library>) {
-        for (name, lib) in libraries.iter_mut() {
-            if let Some(value) = self.env.get(&EnvVariable::new_search_native(name)) {
-                lib.link_paths = split_paths(&value);
-            }
-            if let Some(value) = self.env.get(&EnvVariable::new_search_framework(name)) {
-                lib.framework_paths = split_paths(&value);
-            }
-            if let Some(value) = self.env.get(&EnvVariable::new_lib(name)) {
-                lib.libs = split_string(&value);
-            }
-            if let Some(value) = self.env.get(&EnvVariable::new_lib_framework(name)) {
-                lib.frameworks = split_string(&value);
-            }
-            if let Some(value) = self.env.get(&EnvVariable::new_include(name)) {
-                lib.include_paths = split_paths(&value);
-            }
-        }
-    }
-
-    fn gen_flags(&self, libraries: &HashMap<String, Library>) -> Result<BuildFlags, Error> {
-        let mut flags = BuildFlags::new();
-        let mut include_paths = Vec::new();
-
-        for (name, lib) in libraries.iter() {
-            include_paths.extend(lib.include_paths.clone());
-
-            if lib.source == Source::EnvVariables
-                && lib.libs.is_empty()
-                && lib.frameworks.is_empty()
-            {
-                return Err(Error::MissingLib(name.clone()));
-            }
-
-            lib.link_paths
-                .iter()
-                .for_each(|l| flags.add(BuildFlag::SearchNative(l.to_string_lossy().to_string())));
-            lib.framework_paths.iter().for_each(|f| {
-                flags.add(BuildFlag::SearchFramework(f.to_string_lossy().to_string()))
-            });
-            lib.libs
-                .iter()
-                .for_each(|l| flags.add(BuildFlag::Lib(l.clone())));
-            lib.frameworks
-                .iter()
-                .for_each(|f| flags.add(BuildFlag::LibFramework(f.clone())));
-        }
-
-        // Export DEP_$CRATE_INCLUDE env variable with the headers paths,
-        // see https://kornel.ski/rust-sys-crate#headers
-        if !include_paths.is_empty() {
-            if let Ok(paths) = std::env::join_paths(include_paths) {
-                flags.add(BuildFlag::Include(paths.to_string_lossy().to_string()));
-            }
-        }
-
-        // Export cargo:rerun-if-env-changed instructions for all env variables affecting system-deps behaviour
-        flags.add(BuildFlag::RerunIfEnvChanged(
-            EnvVariable::new_build_internal(None),
-        ));
-
-        for (name, _lib) in libraries.iter() {
-            for var in EnvVariable::iter() {
-                let var = match var {
-                    EnvVariable::Lib(_) => EnvVariable::new_lib(name),
-                    EnvVariable::LibFramework(_) => EnvVariable::new_lib_framework(name),
-                    EnvVariable::SearchNative(_) => EnvVariable::new_search_native(name),
-                    EnvVariable::SearchFramework(_) => EnvVariable::new_search_framework(name),
-                    EnvVariable::Include(_) => EnvVariable::new_include(name),
-                    EnvVariable::NoPkgConfig(_) => EnvVariable::new_no_pkg_config(name),
-                    EnvVariable::BuildInternal(_) => EnvVariable::new_build_internal(Some(name)),
-                };
-                flags.add(BuildFlag::RerunIfEnvChanged(var));
-            }
-        }
-
-        Ok(flags)
     }
 
     fn has_feature(&self, feature: &str) -> bool {
