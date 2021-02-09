@@ -7,4 +7,4 @@ Name: Test Library
 Description: A fake library to test pkg-config.
 Version: 1.2.3
 Libs: -L${libdir} -ltest -F${libdir} -framework someframework
-Cflags: -I${includedir}
+Cflags: -I${includedir} -DBADGER=yes -DAWESOME

@@ -67,6 +67,12 @@ fn good() {
     let (libraries, flags) = toml("toml-good", vec![]).unwrap();
     let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.version, "1.2.3");
+    assert_eq!(
+        testlib.defines.get("BADGER").unwrap().as_deref(),
+        Some("yes")
+    );
+    assert!(testlib.defines.get("AWESOME").unwrap().is_none());
+
     let testdata = libraries.get_by_name("testdata").unwrap();
     assert_eq!(testdata.version, "4.5.6");
     assert!(libraries.get_by_name("testmore").is_none());
