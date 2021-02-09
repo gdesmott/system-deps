@@ -141,6 +141,7 @@ extern crate lazy_static;
 mod test;
 
 use heck::{ShoutySnakeCase, SnakeCase};
+use itertools::Itertools;
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
@@ -211,6 +212,67 @@ impl Libraries {
     /// dependency in `Cargo.toml`.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Library)> {
         self.libs.iter().map(|(k, v)| (k.as_str(), v))
+    }
+
+    fn aggregate_str<F: Fn(&Library) -> &Vec<String>>(
+        &self,
+        getter: F,
+    ) -> impl Iterator<Item = &str> {
+        self.libs
+            .values()
+            .map(|l| getter(l))
+            .flatten()
+            .map(|s| s.as_str())
+            .sorted()
+            .dedup()
+    }
+
+    fn aggregate_path_buf<F: Fn(&Library) -> &Vec<PathBuf>>(
+        &self,
+        getter: F,
+    ) -> impl Iterator<Item = &PathBuf> {
+        self.libs
+            .values()
+            .map(|l| getter(l))
+            .flatten()
+            .sorted()
+            .dedup()
+    }
+
+    /// An iterator returning each [Library::libs] of each library, removing duplicates.
+    pub fn all_libs(&self) -> impl Iterator<Item = &str> {
+        self.aggregate_str(|l| &l.libs)
+    }
+
+    /// An iterator returning each [Library::link_paths] of each library, removing duplicates.
+    pub fn all_link_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.aggregate_path_buf(|l| &l.link_paths)
+    }
+
+    /// An iterator returning each [Library::frameworks] of each library, removing duplicates.
+    pub fn all_frameworks(&self) -> impl Iterator<Item = &str> {
+        self.aggregate_str(|l| &l.frameworks)
+    }
+
+    /// An iterator returning each [Library::framework_paths] of each library, removing duplicates.
+    pub fn all_framework_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.aggregate_path_buf(|l| &l.framework_paths)
+    }
+
+    /// An iterator returning each [Library::include_paths] of each library, removing duplicates.
+    pub fn all_include_paths(&self) -> impl Iterator<Item = &PathBuf> {
+        self.aggregate_path_buf(|l| &l.include_paths)
+    }
+
+    /// An iterator returning each [Library::defines] of each library, removing duplicates.
+    pub fn all_defines(&self) -> impl Iterator<Item = (&str, &Option<String>)> {
+        self.libs
+            .values()
+            .map(|l| l.defines.iter())
+            .flatten()
+            .map(|(k, v)| (k.as_str(), v))
+            .sorted()
+            .dedup()
     }
 
     fn add(&mut self, name: &str, lib: Library) {

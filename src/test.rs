@@ -784,3 +784,40 @@ fn optional() {
     // testlib is no longer optional if enabling v5
     toml_pkg_config_err_version("toml-optional", "5.0", vec![("CARGO_FEATURE_V5", "")]);
 }
+
+#[test]
+fn aggregate() {
+    let (libraries, _) = toml("toml-two-libs", vec![]).unwrap();
+
+    assert_eq!(
+        libraries.all_libs().collect::<Vec<&str>>(),
+        vec!["test", "test2"]
+    );
+    assert_eq!(
+        libraries.all_link_paths().collect::<Vec<&PathBuf>>(),
+        vec![Path::new("/usr/lib"), Path::new("/usr/lib64")]
+    );
+    assert_eq!(
+        libraries.all_frameworks().collect::<Vec<&str>>(),
+        vec!["someframework", "someotherframework"]
+    );
+    assert_eq!(
+        libraries.all_framework_paths().collect::<Vec<&PathBuf>>(),
+        vec![Path::new("/usr/lib"), Path::new("/usr/lib64")]
+    );
+    assert_eq!(
+        libraries.all_include_paths().collect::<Vec<&PathBuf>>(),
+        vec![
+            Path::new("/usr/include/testanotherlib"),
+            Path::new("/usr/include/testlib")
+        ]
+    );
+    assert_eq!(
+        libraries.all_defines().collect::<Vec<_>>(),
+        vec![
+            ("AWESOME", &None),
+            ("BADGER", &Some("yes".into())),
+            ("GREAT", &None)
+        ]
+    );
+}
