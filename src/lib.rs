@@ -92,6 +92,31 @@
 //! v1_18 = { version = "1.18", name = "gstreamer-gl-egl-1.0" }
 //! ```
 //!
+//! # Target specific dependencies
+//!
+//! You can define target specific dependencies:
+//!
+//! ```toml
+//! [package.metadata.system-deps.'cfg(target_os = "linux")']
+//! testdata = "1"
+//! [package.metadata.system-deps.'cfg(not(target_os = "macos"))']
+//! testlib = "1"
+//! [package.metadata.system-deps.'cfg(unix)']
+//! testanotherlib = { version = "1", optional = true }
+//! ```
+//!
+//! See [the Rust documentation](https://doc.rust-lang.org/reference/conditional-compilation.html)
+//! for the exact syntax.
+//! Currently those keys are supported:
+//! - `target_arch`
+//! - `target_endian`
+//! - `target_env`
+//! - `target_family`
+//! - `target_os`
+//! - `target_pointer_width`
+//! - `target_vendor`
+//! - `unix` and `windows`
+//!
 //! # Overriding build flags
 //! By default `system-deps` automatically defines the required build flags for each dependency using the information fetched from `pkg-config`.
 //! These flags can be overriden using environment variables if needed:
@@ -189,6 +214,9 @@ pub enum Error {
     /// required version defined in `Cargo.toml`
     #[error("Internally built {0} {1} but minimum required version is {2}")]
     BuildInternalWrongVersion(String, String, String),
+    /// The `cfg()` expression used in `Cargo.toml` is currently not supported
+    #[error("Unsupported cfg() expression: {0}")]
+    UnsupportedCfg(String),
 }
 
 #[derive(Debug, Default)]
@@ -544,6 +572,13 @@ impl Config {
         let mut libraries = Dependencies::default();
 
         for dep in metadata.deps.iter() {
+            if let Some(cfg) = &dep.cfg {
+                // Check if `cfg()` expression matches the target settings
+                if !self.check_cfg(cfg)? {
+                    continue;
+                }
+            }
+
             let mut enabled_feature_overrides = Vec::new();
 
             for o in dep.version_overrides.iter() {
@@ -662,6 +697,24 @@ impl Config {
     fn has_feature(&self, feature: &str) -> bool {
         let var: &str = &format!("CARGO_FEATURE_{}", feature.to_uppercase().replace('-', "_"));
         self.env.contains(var)
+    }
+
+    fn check_cfg(&self, cfg: &cfg_expr::Expression) -> Result<bool, Error> {
+        use cfg_expr::{targets::get_builtin_target_by_triple, Predicate};
+
+        let target = self
+            .env
+            .get("TARGET")
+            .expect("no TARGET env variable defined");
+        let target = get_builtin_target_by_triple(&target)
+            .unwrap_or_else(|| panic!("Invalid TARGET: {}", target));
+
+        let res = cfg.eval(|pred| match pred {
+            Predicate::Target(tp) => Some(tp.matches(target)),
+            _ => None,
+        });
+
+        res.ok_or_else(|| Error::UnsupportedCfg(cfg.original().to_string()))
     }
 }
 

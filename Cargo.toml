@@ -20,6 +20,7 @@ strum_macros = "0.20"
 thiserror = "1"
 anyhow = "1.0"
 itertools = "0.10"
+cfg-expr = "0.7.4"
 
 [dev-dependencies]
 lazy_static = "1"

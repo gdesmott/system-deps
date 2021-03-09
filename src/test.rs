@@ -823,3 +823,40 @@ fn aggregate() {
         ]
     );
 }
+
+#[test]
+fn os_specific() {
+    let (libraries, _) = toml(
+        "toml-os-specific",
+        vec![("TARGET", "x86_64-unknown-linux-gnu")],
+    )
+    .unwrap();
+    assert!(libraries.get_by_name("testdata").is_some());
+    assert!(libraries.get_by_name("testlib").is_some());
+    assert!(libraries.get_by_name("testanotherlib").is_some());
+
+    let (libraries, _) = toml("toml-os-specific", vec![("TARGET", "x86_64-apple-darwin")]).unwrap();
+    assert!(libraries.get_by_name("testdata").is_none());
+    assert!(libraries.get_by_name("testlib").is_none());
+    assert!(libraries.get_by_name("testanotherlib").is_some());
+
+    let (libraries, _) = toml(
+        "toml-os-specific",
+        vec![("TARGET", "x86_64-pc-windows-gnu")],
+    )
+    .unwrap();
+    assert!(libraries.get_by_name("testdata").is_none());
+    assert!(libraries.get_by_name("testlib").is_some());
+    assert!(libraries.get_by_name("testanotherlib").is_none());
+}
+
+#[test]
+fn invalid_cfg() {
+    let err = toml(
+        "toml-invalid-cfg",
+        vec![("TARGET", "x86_64-unknown-linux-gnu")],
+    )
+    .unwrap_err();
+
+    assert_matches!(err, Error::UnsupportedCfg(_));
+}

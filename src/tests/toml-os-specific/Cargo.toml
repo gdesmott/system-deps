@@ -1,0 +1,6 @@
+[package.metadata.system-deps.'cfg(target_os = "linux")']
+testdata = "1"
+[package.metadata.system-deps.'cfg(not(target_os = "macos"))']
+testlib = "1"
+[package.metadata.system-deps.'cfg(unix)']
+testanotherlib = { version = "1", optional = true }

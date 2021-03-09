@@ -17,6 +17,7 @@ pub(crate) struct Dependency {
     pub(crate) name: Option<String>,
     pub(crate) feature: Option<String>,
     pub(crate) optional: bool,
+    pub(crate) cfg: Option<cfg_expr::Expression>,
     pub(crate) version_overrides: Vec<VersionOverride>,
 }
 
@@ -41,6 +42,7 @@ impl Default for Dependency {
             name: None,
             feature: None,
             optional: false,
+            cfg: None,
             version_overrides: Vec::new(),
         }
     }
@@ -112,12 +114,16 @@ impl MetaData {
             .and_then(|v| v.get("system-deps"))
             .ok_or_else(|| anyhow!("no {}", key))?;
 
-        let deps = Self::parse_deps_table(meta, key)?;
+        let deps = Self::parse_deps_table(meta, key, true)?;
 
         Ok(MetaData { deps })
     }
 
-    fn parse_deps_table(table: &Value, key: &str) -> Result<Vec<Dependency>, Error> {
+    fn parse_deps_table(
+        table: &Value,
+        key: &str,
+        allow_cfg: bool,
+    ) -> Result<Vec<Dependency>, Error> {
         let table = table
             .as_table()
             .ok_or_else(|| anyhow!("{} not a table", key))?;
@@ -125,9 +131,24 @@ impl MetaData {
         let mut deps = Vec::new();
 
         for (name, value) in table {
-            let dep =
-                Self::parse_dep(name, value).map_err(|e| anyhow!("{}.{}: {}", key, name, e))?;
-            deps.push(dep);
+            if name.starts_with("cfg(") {
+                if allow_cfg {
+                    let cfg_exp = cfg_expr::Expression::parse(name)?;
+
+                    for mut dep in
+                        Self::parse_deps_table(value, &format!("{}.{}", key, name), false)?
+                    {
+                        dep.cfg = Some(cfg_exp.clone());
+                        deps.push(dep);
+                    }
+                } else {
+                    bail!("{}.{}: cfg() cannot be nested", key, name);
+                }
+            } else {
+                let dep =
+                    Self::parse_dep(name, value).map_err(|e| anyhow!("{}.{}: {}", key, name, e))?;
+                deps.push(dep);
+            }
         }
 
         Ok(deps)
@@ -208,6 +229,7 @@ impl MetaData {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+    use cfg_expr::Expression;
     use std::path::PathBuf;
 
     fn parse_file(dir: &str) -> Result<MetaData, crate::Error> {
@@ -347,6 +369,38 @@ mod tests {
                             name: None,
                             optional: Some(true),
                         },],
+                        ..Default::default()
+                    },
+                ]
+            }
+        )
+    }
+
+    #[test]
+    fn parse_os_specific() {
+        let m = parse_file("toml-os-specific").unwrap();
+
+        assert_eq!(
+            m,
+            MetaData {
+                deps: vec![
+                    Dependency {
+                        key: "testlib".into(),
+                        version: Some("1".into()),
+                        cfg: Some(Expression::parse("not(target_os = \"macos\")").unwrap()),
+                        ..Default::default()
+                    },
+                    Dependency {
+                        key: "testdata".into(),
+                        version: Some("1".into()),
+                        cfg: Some(Expression::parse("target_os = \"linux\"").unwrap()),
+                        ..Default::default()
+                    },
+                    Dependency {
+                        key: "testanotherlib".into(),
+                        version: Some("1".into()),
+                        cfg: Some(Expression::parse("unix").unwrap()),
+                        optional: true,
                         ..Default::default()
                     },
                 ]
