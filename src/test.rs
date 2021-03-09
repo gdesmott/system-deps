@@ -245,12 +245,14 @@ fn feature_versions() {
 
 #[test]
 fn override_search_native() {
+    #[cfg(target_os = "windows")]
+    let paths_env = "/custom/path;/other/path";
+    #[cfg(not(target_os = "windows"))]
+    let paths_env = "/custom/path:/other/path";
+
     let (libraries, flags) = toml(
         "toml-good",
-        vec![(
-            "SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE",
-            "/custom/path:/other/path",
-        )],
+        vec![("SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE", paths_env)],
     )
     .unwrap();
     let testlib = libraries.get_by_name("testlib").unwrap();
