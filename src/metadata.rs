@@ -112,19 +112,25 @@ impl MetaData {
             .and_then(|v| v.get("system-deps"))
             .ok_or_else(|| anyhow!("no {}", key))?;
 
-        let table = meta
+        let deps = Self::parse_deps_table(meta, key)?;
+
+        Ok(MetaData { deps })
+    }
+
+    fn parse_deps_table(table: &Value, key: &str) -> Result<Vec<Dependency>, Error> {
+        let table = table
             .as_table()
             .ok_or_else(|| anyhow!("{} not a table", key))?;
 
         let mut deps = Vec::new();
 
         for (name, value) in table {
-            let dep = Self::parse_dep(name, value)
-                .map_err(|e| anyhow!("metadata.system-deps.{}: {}", name, e))?;
+            let dep =
+                Self::parse_dep(name, value).map_err(|e| anyhow!("{}.{}: {}", key, name, e))?;
             deps.push(dep);
         }
 
-        Ok(MetaData { deps })
+        Ok(deps)
     }
 
     fn parse_dep(name: &str, value: &Value) -> Result<Dependency, Error> {
