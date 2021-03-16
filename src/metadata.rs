@@ -24,16 +24,25 @@ impl Dependency {
     fn new(name: &str) -> Self {
         Self {
             key: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn lib_name(&self) -> String {
+        self.name.as_ref().unwrap_or(&self.key).to_string()
+    }
+}
+
+impl Default for Dependency {
+    fn default() -> Self {
+        Self {
+            key: "".to_string(),
             version: None,
             name: None,
             feature: None,
             optional: false,
             version_overrides: Vec::new(),
         }
-    }
-
-    pub(crate) fn lib_name(&self) -> String {
-        self.name.as_ref().unwrap_or(&self.key).to_string()
     }
 }
 
@@ -217,26 +226,19 @@ mod tests {
                     Dependency {
                         key: "testdata".into(),
                         version: Some("4".into()),
-                        name: None,
-                        feature: None,
-                        optional: false,
-                        version_overrides: vec![],
+                        ..Default::default()
                     },
                     Dependency {
                         key: "testlib".into(),
                         version: Some("1".into()),
-                        name: None,
                         feature: Some("test-feature".into()),
-                        optional: false,
-                        version_overrides: vec![],
+                        ..Default::default()
                     },
                     Dependency {
                         key: "testmore".into(),
                         version: Some("2".into()),
-                        name: None,
                         feature: Some("another-test-feature".into()),
-                        optional: false,
-                        version_overrides: vec![],
+                        ..Default::default()
                     }
                 ]
             }
@@ -262,14 +264,13 @@ mod tests {
                     key: "test_lib".into(),
                     version: Some("1.0".into()),
                     name: Some("testlib".into()),
-                    feature: None,
-                    optional: false,
                     version_overrides: vec![VersionOverride {
                         key: "v1_2".into(),
                         version: "1.2".into(),
                         name: None,
                         optional: None,
                     }],
+                    ..Default::default()
                 },]
             }
         )
@@ -285,9 +286,6 @@ mod tests {
                 deps: vec![Dependency {
                     key: "testdata".into(),
                     version: Some("4".into()),
-                    name: None,
-                    feature: None,
-                    optional: false,
                     version_overrides: vec![
                         VersionOverride {
                             key: "v5".into(),
@@ -302,6 +300,7 @@ mod tests {
                             optional: None,
                         },
                     ],
+                    ..Default::default()
                 },]
             }
         )
@@ -318,16 +317,12 @@ mod tests {
                     Dependency {
                         key: "testbadger".into(),
                         version: Some("1".into()),
-                        name: None,
-                        feature: None,
                         optional: true,
-                        version_overrides: vec![],
+                        ..Default::default()
                     },
                     Dependency {
                         key: "testlib".into(),
                         version: Some("1.0".into()),
-                        name: None,
-                        feature: None,
                         optional: true,
                         version_overrides: vec![VersionOverride {
                             key: "v5".into(),
@@ -335,19 +330,18 @@ mod tests {
                             name: Some("testlib-5.0".into()),
                             optional: Some(false),
                         },],
+                        ..Default::default()
                     },
                     Dependency {
                         key: "testmore".into(),
                         version: Some("2".into()),
-                        name: None,
-                        feature: None,
-                        optional: false,
                         version_overrides: vec![VersionOverride {
                             key: "v3".into(),
                             version: "3.0".into(),
                             name: None,
                             optional: Some(true),
                         },],
+                        ..Default::default()
                     },
                 ]
             }
