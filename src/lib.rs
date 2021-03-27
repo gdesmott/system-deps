@@ -812,8 +812,9 @@ impl Library {
 
         match old {
             Ok(ref s) => {
-                let paths = [s, &pkg_config_dir.as_ref().to_string_lossy().to_string()];
-                let paths = env::join_paths(paths.iter()).unwrap();
+                let mut paths = env::split_paths(s).collect::<Vec<_>>();
+                paths.push(PathBuf::from(pkg_config_dir.as_ref()));
+                let paths = env::join_paths(paths).unwrap();
                 env::set_var("PKG_CONFIG_PATH", paths)
             }
             Err(_) => env::set_var("PKG_CONFIG_PATH", pkg_config_dir.as_ref()),
