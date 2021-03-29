@@ -24,6 +24,7 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
             "PKG_CONFIG_PATH",
             &env::current_dir().unwrap().join("src").join("tests"),
         );
+        env::set_var("PKG_CONFIG_SYSTEM_LIBRARY_PATH", "/usr/lib64/");
     }
 
     let mut hash = HashMap::new();
@@ -859,4 +860,19 @@ fn invalid_cfg() {
     .unwrap_err();
 
     assert_matches!(err, Error::UnsupportedCfg(_));
+}
+
+#[test]
+fn system_libs() {
+    let config = create_config("toml-testlib64", vec![]);
+    let (libraries, _) = config.probe_full().unwrap();
+    let testlib = libraries.get("testlib64").unwrap();
+    // Link path is stripped as it's a system lib (PKG_CONFIG_SYSTEM_LIBRARY_PATH)
+    assert!(testlib.link_paths.is_empty());
+
+    // Request system libs to not be stripped
+    let config = create_config("toml-testlib64", vec![]).preserve_system_libs();
+    let (libraries, _) = config.probe_full().unwrap();
+    let testlib = libraries.get("testlib64").unwrap();
+    assert_eq!(testlib.link_paths[0], Path::new("/usr/lib64"));
 }
