@@ -4,7 +4,7 @@
 rather than programmatically in `build.rs`. This makes those dependencies
 declarative, so other tools can read them as well.
 
-For now only `pkg-config` dependencies are supported but we are planning to
+For now only `pkg-config` dependencies are supported, but we are planning to
 [expand it](https://github.com/gdesmott/system-deps/issues/3) at some point.
 
 Users can override dependency flags using environment variables if needed.

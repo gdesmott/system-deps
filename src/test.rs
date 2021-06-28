@@ -18,7 +18,7 @@ lazy_static! {
 
 fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
     {
-        // PKG_CONFIG_PATH is read by pkg-config so we need to actually change the env
+        // PKG_CONFIG_PATH is read by pkg-config, so we need to actually change the env
         let _l = LOCK.lock();
         env::set_var(
             "PKG_CONFIG_PATH",
@@ -542,7 +542,7 @@ fn test_build_internal(
             .probe(lib)
             .unwrap();
         pkg_lib.version = version.to_string();
-        Ok(Library::from_pkg_config(&lib, pkg_lib))
+        Ok(Library::from_pkg_config(lib, pkg_lib))
     });
 
     match config.probe_full() {
@@ -560,7 +560,7 @@ fn build_internal_always() {
     )
     .unwrap();
 
-    assert_eq!(called, true);
+    assert!(called);
     assert!(libraries.get_by_name("testlib").is_some());
 }
 
@@ -580,7 +580,7 @@ fn build_internal_auto_not_called() {
 
 #[test]
 fn build_internal_auto_called() {
-    // Version 5 is not available so we should try building
+    // Version 5 is not available, so we should try building
     let (libraries, called) = test_build_internal(
         "toml-feature-versions",
         vec![
@@ -591,13 +591,13 @@ fn build_internal_auto_called() {
     )
     .unwrap();
 
-    assert_eq!(called, true);
+    assert!(called);
     assert!(libraries.get_by_name("testdata").is_some());
 }
 
 #[test]
 fn build_internal_auto_never() {
-    // Version 5 is not available but we forbid to build the lib
+    // Version 5 is not available, but we forbid to build the lib
     let (err, called) = test_build_internal(
         "toml-feature-versions",
         vec![
@@ -654,12 +654,12 @@ fn build_internal_wrong_version() {
             .cargo_metadata(false)
             .probe(lib)
             .unwrap();
-        Ok(Library::from_pkg_config(&lib, pkg_lib))
+        Ok(Library::from_pkg_config(lib, pkg_lib))
     });
 
     let err = config.probe_full().unwrap_err();
     assert!(matches!(err, Error::BuildInternalWrongVersion(..)));
-    assert_eq!(called.get(), true);
+    assert!(called.get());
 }
 
 #[test]
@@ -678,7 +678,7 @@ fn build_internal_fail() {
 
     let err = config.probe_full().unwrap_err();
     assert!(matches!(err, Error::BuildInternalClosureError(..)));
-    assert_eq!(called.get(), true);
+    assert!(called.get());
 }
 
 #[test]
@@ -696,7 +696,7 @@ fn build_internal_always_gobal() {
                 .probe(lib)
                 .unwrap();
             pkg_lib.version = version.to_string();
-            Ok(Library::from_pkg_config(&lib, pkg_lib))
+            Ok(Library::from_pkg_config(lib, pkg_lib))
         })
         .add_build_internal("testdata", move |lib, version| {
             let (a, _) = called_clone2.get();
@@ -707,7 +707,7 @@ fn build_internal_always_gobal() {
                 .probe(lib)
                 .unwrap();
             pkg_lib.version = version.to_string();
-            Ok(Library::from_pkg_config(&lib, pkg_lib))
+            Ok(Library::from_pkg_config(lib, pkg_lib))
         });
 
     let libraries = config.probe_full().unwrap();
@@ -738,7 +738,7 @@ fn build_internal_gobal_override() {
             .probe(lib)
             .unwrap();
         pkg_lib.version = version.to_string();
-        Ok(Library::from_pkg_config(&lib, pkg_lib))
+        Ok(Library::from_pkg_config(lib, pkg_lib))
     })
     .add_build_internal("testdata", move |lib, version| {
         let (a, _) = called_clone2.get();
@@ -749,7 +749,7 @@ fn build_internal_gobal_override() {
             .probe(lib)
             .unwrap();
         pkg_lib.version = version.to_string();
-        Ok(Library::from_pkg_config(&lib, pkg_lib))
+        Ok(Library::from_pkg_config(lib, pkg_lib))
     });
 
     let libraries = config.probe_full().unwrap();
@@ -767,7 +767,7 @@ fn build_internal_override_name() {
     )
     .unwrap();
 
-    assert_eq!(called, true);
+    assert!(called);
     assert!(libraries.get_by_name("test_lib").is_some());
 }
 

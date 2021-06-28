@@ -57,7 +57,7 @@
 //! ```
 //!
 //! # Overriding library name
-//! `toml` keys cannot contain dot characters so if your library name does you can define it using the `name` field:
+//! `toml` keys cannot contain dot characters so if your library name does, you can define it using the `name` field:
 //!
 //! ```toml
 //! [package.metadata.system-deps]
@@ -107,7 +107,7 @@
 //!
 //! See [the Rust documentation](https://doc.rust-lang.org/reference/conditional-compilation.html)
 //! for the exact syntax.
-//! Currently those keys are supported:
+//! Currently, those keys are supported:
 //! - `target_arch`
 //! - `target_endian`
 //! - `target_env`
@@ -119,7 +119,7 @@
 //!
 //! # Overriding build flags
 //! By default `system-deps` automatically defines the required build flags for each dependency using the information fetched from `pkg-config`.
-//! These flags can be overriden using environment variables if needed:
+//! These flags can be overridden using environment variables if needed:
 //! - `SYSTEM_DEPS_$NAME_SEARCH_NATIVE` to override the [`cargo:rustc-link-search=native`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorustc-link-searchkindpath) flag;
 //! - `SYSTEM_DEPS_$NAME_SEARCH_FRAMEWORK` to override the [`cargo:rustc-link-search=framework`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorustc-link-searchkindpath) flag;
 //! - `SYSTEM_DEPS_$NAME_LIB` to override the [`cargo:rustc-link-lib`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-lib) flag;
@@ -513,7 +513,7 @@ impl Config {
     /// Probe all libraries configured in the Cargo.toml
     /// `[package.metadata.system-deps]` section.
     ///
-    /// The returned hash is using the the `toml` key defining the dependency as key.
+    /// The returned hash is using the `toml` key defining the dependency as key.
     pub fn probe(self) -> Result<Dependencies, Error> {
         let libraries = self.probe_full()?;
         let flags = libraries.gen_flags()?;
@@ -538,7 +538,7 @@ impl Config {
     /// # Arguments
     /// * `name`: the name of the library, as defined in `Cargo.toml`
     /// * `func`: closure called when internally building the library.
-    /// It receives as argument the library name and the minimum version required.
+    /// It receives as argument the library name, and the minimum version required.
     pub fn add_build_internal<F>(self, name: &str, func: F) -> Self
     where
         F: 'static + FnOnce(&str, &str) -> std::result::Result<Library, BuildInternalClosureError>,
@@ -588,7 +588,7 @@ impl Config {
             }
 
             if let Some(feature) = dep.feature.as_ref() {
-                if !self.has_feature(&feature) {
+                if !self.has_feature(feature) {
                     continue;
                 }
             }
@@ -623,10 +623,10 @@ impl Config {
             let library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables(name)
             } else if build_internal == BuildInternal::Always {
-                self.call_build_internal(&lib_name, &version)?
+                self.call_build_internal(&lib_name, version)?
             } else {
                 match pkg_config::Config::new()
-                    .atleast_version(&version)
+                    .atleast_version(version)
                     .print_system_libs(false)
                     .cargo_metadata(false)
                     .probe(&lib_name)
@@ -635,7 +635,7 @@ impl Config {
                     Err(e) => {
                         if build_internal == BuildInternal::Auto {
                             // Try building the lib internally as a fallback
-                            self.call_build_internal(name, &version)?
+                            self.call_build_internal(name, version)?
                         } else if optional {
                             // If the dep is optional just skip it
                             continue;
@@ -807,7 +807,7 @@ impl Library {
     where
         P: AsRef<Path>,
     {
-        // save current PKG_CONFIG_PATH so we can restore it
+        // save current PKG_CONFIG_PATH, so we can restore it
         let old = env::var("PKG_CONFIG_PATH");
 
         match old {
@@ -821,7 +821,7 @@ impl Library {
         }
 
         let pkg_lib = pkg_config::Config::new()
-            .atleast_version(&version)
+            .atleast_version(version)
             .print_system_libs(false)
             .cargo_metadata(false)
             .probe(lib);
@@ -829,7 +829,7 @@ impl Library {
         env::set_var("PKG_CONFIG_PATH", &old.unwrap_or_else(|_| "".into()));
 
         match pkg_lib {
-            Ok(pkg_lib) => Ok(Self::from_pkg_config(&lib, pkg_lib)),
+            Ok(pkg_lib) => Ok(Self::from_pkg_config(lib, pkg_lib)),
             Err(e) => Err(e.into()),
         }
     }
