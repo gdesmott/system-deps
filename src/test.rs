@@ -574,7 +574,7 @@ fn build_internal_auto_not_called() {
     )
     .unwrap();
 
-    assert_eq!(called, false);
+    assert!(!called);
     assert!(libraries.get_by_name("testlib").is_some());
 }
 
@@ -609,7 +609,7 @@ fn build_internal_auto_never() {
     .unwrap_err();
 
     assert!(matches!(err, Error::PkgConfig(..)));
-    assert_eq!(called, false);
+    assert!(!called);
 }
 
 #[test]
