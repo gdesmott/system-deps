@@ -132,7 +132,8 @@
 //! One can also define the environment variable `SYSTEM_DEPS_$NAME_NO_PKG_CONFIG` to fully disable `pkg-config` lookup
 //! for the given dependency. In this case at least SYSTEM_DEPS_$NAME_LIB or SYSTEM_DEPS_$NAME_LIB_FRAMEWORK should be defined as well.
 //!
-//! # Statically build system library
+//! # Internally build system libraries
+//!
 //! `-sys` crates can provide support for building and statically link their underlying system library as part of their build process.
 //! Here is how to do this in your `build.rs`:
 //! ```should_panic
@@ -155,6 +156,12 @@
 //!
 //! You can also use the `SYSTEM_DEPS_BUILD_INTERNAL` environment variable with the same values
 //! defining the behavior for all the dependencies which don't have `SYSTEM_DEPS_$NAME_BUILD_INTERNAL` defined.
+//!
+//! # Static linking
+//!
+//! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
+//! Libraries can be statically linked by defining the environment variable `SYSTEM_DEPS_$NAME_LINK=static`.
+//! You can also use `SYSTEM_DEPS_LINK=static` to statically link all the libraries.
 
 #![deny(missing_docs)]
 
@@ -349,7 +356,7 @@ impl Dependencies {
             });
             lib.libs
                 .iter()
-                .for_each(|l| flags.add(BuildFlag::Lib(l.clone())));
+                .for_each(|l| flags.add(BuildFlag::Lib(l.clone(), lib.statik)));
             lib.frameworks
                 .iter()
                 .for_each(|f| flags.add(BuildFlag::LibFramework(f.clone())));
@@ -367,6 +374,7 @@ impl Dependencies {
         flags.add(BuildFlag::RerunIfEnvChanged(
             EnvVariable::new_build_internal(None),
         ));
+        flags.add(BuildFlag::RerunIfEnvChanged(EnvVariable::new_link(None)));
 
         for (name, _lib) in self.libs.iter() {
             for var in EnvVariable::iter() {
@@ -378,6 +386,7 @@ impl Dependencies {
                     EnvVariable::Include(_) => EnvVariable::new_include(name),
                     EnvVariable::NoPkgConfig(_) => EnvVariable::new_no_pkg_config(name),
                     EnvVariable::BuildInternal(_) => EnvVariable::new_build_internal(Some(name)),
+                    EnvVariable::Link(_) => EnvVariable::new_link(Some(name)),
                 };
                 flags.add(BuildFlag::RerunIfEnvChanged(var));
             }
@@ -420,6 +429,7 @@ enum EnvVariable {
     Include(String),
     NoPkgConfig(String),
     BuildInternal(Option<String>),
+    Link(Option<String>),
 }
 
 impl EnvVariable {
@@ -451,6 +461,10 @@ impl EnvVariable {
         Self::BuildInternal(lib.map(|l| l.to_string()))
     }
 
+    fn new_link(lib: Option<&str>) -> Self {
+        Self::Link(lib.map(|l| l.to_string()))
+    }
+
     fn suffix(&self) -> &'static str {
         match self {
             EnvVariable::Lib(_) => "LIB",
@@ -460,6 +474,7 @@ impl EnvVariable {
             EnvVariable::Include(_) => "INCLUDE",
             EnvVariable::NoPkgConfig(_) => "NO_PKG_CONFIG",
             EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
+            EnvVariable::Link(_) => "LINK",
         }
     }
 }
@@ -473,10 +488,11 @@ impl fmt::Display for EnvVariable {
             | EnvVariable::SearchFramework(lib)
             | EnvVariable::Include(lib)
             | EnvVariable::NoPkgConfig(lib)
-            | EnvVariable::BuildInternal(Some(lib)) => {
+            | EnvVariable::BuildInternal(Some(lib))
+            | EnvVariable::Link(Some(lib)) => {
                 format!("{}_{}", lib.to_shouty_snake_case(), self.suffix())
             }
-            EnvVariable::BuildInternal(None) => self.suffix().to_string(),
+            EnvVariable::BuildInternal(None) | EnvVariable::Link(None) => self.suffix().to_string(),
         };
         write!(f, "SYSTEM_DEPS_{}", suffix)
     }
@@ -620,7 +636,13 @@ impl Config {
             let name = &dep.key;
             let build_internal = self.get_build_internal_status(name)?;
 
-            let library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
+            // should the lib be statically linked?
+            let statik = self
+                .env
+                .has_value(&EnvVariable::new_link(Some(name)), "static")
+                || self.env.has_value(&EnvVariable::new_link(None), "static");
+
+            let mut library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables(name)
             } else if build_internal == BuildInternal::Always {
                 self.call_build_internal(&lib_name, version)?
@@ -629,6 +651,7 @@ impl Config {
                     .atleast_version(version)
                     .print_system_libs(false)
                     .cargo_metadata(false)
+                    .statik(statik)
                     .probe(&lib_name)
                 {
                     Ok(lib) => Library::from_pkg_config(&lib_name, lib),
@@ -645,6 +668,8 @@ impl Config {
                     }
                 }
             };
+
+            library.statik = statik;
 
             libraries.add(name, library);
         }
@@ -748,6 +773,8 @@ pub struct Library {
     pub defines: HashMap<String, Option<String>>,
     /// library version
     pub version: String,
+    /// library is statically linked
+    pub statik: bool,
 }
 
 impl Library {
@@ -762,6 +789,7 @@ impl Library {
             framework_paths: l.framework_paths,
             defines: l.defines,
             version: l.version,
+            statik: false,
         }
     }
 
@@ -776,12 +804,15 @@ impl Library {
             framework_paths: Vec::new(),
             defines: HashMap::new(),
             version: String::new(),
+            statik: false,
         }
     }
 
     /// Create a `Library` by probing `pkg-config` on an internal directory.
     /// This helper is meant to be used by `Config::add_build_internal` closures
     /// after having built the lib to return the library information to system-deps.
+    ///
+    /// This library will be statically linked.
     ///
     /// # Arguments
     ///
@@ -824,12 +855,17 @@ impl Library {
             .atleast_version(version)
             .print_system_libs(false)
             .cargo_metadata(false)
+            .statik(true)
             .probe(lib);
 
         env::set_var("PKG_CONFIG_PATH", &old.unwrap_or_else(|_| "".into()));
 
         match pkg_lib {
-            Ok(pkg_lib) => Ok(Self::from_pkg_config(lib, pkg_lib)),
+            Ok(pkg_lib) => {
+                let mut lib = Self::from_pkg_config(lib, pkg_lib);
+                lib.statik = true;
+                Ok(lib)
+            }
             Err(e) => Err(e.into()),
         }
     }
@@ -846,7 +882,15 @@ trait EnvVariablesExt<T> {
     fn contains(&self, var: T) -> bool {
         self.get(var).is_some()
     }
+
     fn get(&self, var: T) -> Option<String>;
+
+    fn has_value(&self, var: T, val: &str) -> bool {
+        match self.get(var) {
+            Some(v) => v == val,
+            None => false,
+        }
+    }
 }
 
 impl EnvVariablesExt<&str> for EnvVariables {
@@ -867,13 +911,12 @@ impl EnvVariablesExt<&EnvVariable> for EnvVariables {
     }
 }
 
-// TODO: add support for "rustc-link-lib=static=" ?
 #[derive(Debug, PartialEq)]
 enum BuildFlag {
     Include(String),
     SearchNative(String),
     SearchFramework(String),
-    Lib(String),
+    Lib(String, bool), // true if static
     LibFramework(String),
     RerunIfEnvChanged(EnvVariable),
 }
@@ -884,7 +927,13 @@ impl fmt::Display for BuildFlag {
             BuildFlag::Include(paths) => write!(f, "include={}", paths),
             BuildFlag::SearchNative(lib) => write!(f, "rustc-link-search=native={}", lib),
             BuildFlag::SearchFramework(lib) => write!(f, "rustc-link-search=framework={}", lib),
-            BuildFlag::Lib(lib) => write!(f, "rustc-link-lib={}", lib),
+            BuildFlag::Lib(lib, statik) => {
+                if *statik {
+                    write!(f, "rustc-link-lib=static={}", lib)
+                } else {
+                    write!(f, "rustc-link-lib={}", lib)
+                }
+            }
             BuildFlag::LibFramework(lib) => write!(f, "rustc-link-lib=framework={}", lib),
             BuildFlag::RerunIfEnvChanged(env) => write!(f, "rerun-if-env-changed={}", env),
         }
