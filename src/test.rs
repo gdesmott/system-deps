@@ -815,31 +815,28 @@ fn optional() {
 fn aggregate() {
     let (libraries, _) = toml("toml-two-libs", vec![]).unwrap();
 
+    assert_eq!(libraries.all_libs(), vec!["test", "test2"]);
     assert_eq!(
-        libraries.all_libs().collect::<Vec<&str>>(),
-        vec!["test", "test2"]
-    );
-    assert_eq!(
-        libraries.all_link_paths().collect::<Vec<&PathBuf>>(),
+        libraries.all_link_paths(),
         vec![Path::new("/usr/lib"), Path::new("/usr/lib64")]
     );
     assert_eq!(
-        libraries.all_frameworks().collect::<Vec<&str>>(),
+        libraries.all_frameworks(),
         vec!["someframework", "someotherframework"]
     );
     assert_eq!(
-        libraries.all_framework_paths().collect::<Vec<&PathBuf>>(),
+        libraries.all_framework_paths(),
         vec![Path::new("/usr/lib"), Path::new("/usr/lib64")]
     );
     assert_eq!(
-        libraries.all_include_paths().collect::<Vec<&PathBuf>>(),
+        libraries.all_include_paths(),
         vec![
             Path::new("/usr/include/testanotherlib"),
             Path::new("/usr/include/testlib")
         ]
     );
     assert_eq!(
-        libraries.all_defines().collect::<Vec<_>>(),
+        libraries.all_defines(),
         vec![
             ("AWESOME", &None),
             ("BADGER", &Some("yes".into())),
