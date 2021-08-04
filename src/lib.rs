@@ -179,8 +179,6 @@ use std::env;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use strum::IntoEnumIterator;
-use strum_macros::{EnumIter, EnumString};
 use thiserror::Error;
 use version_compare::VersionCompare;
 
@@ -377,19 +375,7 @@ impl Dependencies {
         flags.add(BuildFlag::RerunIfEnvChanged(EnvVariable::new_link(None)));
 
         for (name, _lib) in self.libs.iter() {
-            for var in EnvVariable::iter() {
-                let var = match var {
-                    EnvVariable::Lib(_) => EnvVariable::new_lib(name),
-                    EnvVariable::LibFramework(_) => EnvVariable::new_lib_framework(name),
-                    EnvVariable::SearchNative(_) => EnvVariable::new_search_native(name),
-                    EnvVariable::SearchFramework(_) => EnvVariable::new_search_framework(name),
-                    EnvVariable::Include(_) => EnvVariable::new_include(name),
-                    EnvVariable::NoPkgConfig(_) => EnvVariable::new_no_pkg_config(name),
-                    EnvVariable::BuildInternal(_) => EnvVariable::new_build_internal(Some(name)),
-                    EnvVariable::Link(_) => EnvVariable::new_link(Some(name)),
-                };
-                flags.add(BuildFlag::RerunIfEnvChanged(var));
-            }
+            EnvVariable::add_all_variants(&mut flags, name);
         }
 
         Ok(flags)
@@ -419,8 +405,8 @@ impl BuildInternalClosureError {
     }
 }
 
-// enums representing the environment variables user can define to tune system-deps
-#[derive(Debug, PartialEq, EnumIter)]
+// Enum representing the environment variables user can define to tune system-deps.
+#[derive(Debug, PartialEq)]
 enum EnvVariable {
     Lib(String),
     LibFramework(String),
@@ -476,6 +462,21 @@ impl EnvVariable {
             EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
             EnvVariable::Link(_) => "LINK",
         }
+    }
+
+    fn add_all_variants(flags: &mut BuildFlags, name: &str) {
+        #[inline]
+        fn add_to_flags(flags: &mut BuildFlags, var: EnvVariable) {
+            flags.add(BuildFlag::RerunIfEnvChanged(var));
+        }
+        add_to_flags(flags, EnvVariable::new_lib(name));
+        add_to_flags(flags, EnvVariable::new_lib_framework(name));
+        add_to_flags(flags, EnvVariable::new_search_native(name));
+        add_to_flags(flags, EnvVariable::new_search_framework(name));
+        add_to_flags(flags, EnvVariable::new_include(name));
+        add_to_flags(flags, EnvVariable::new_no_pkg_config(name));
+        add_to_flags(flags, EnvVariable::new_build_internal(Some(name)));
+        add_to_flags(flags, EnvVariable::new_link(Some(name)));
     }
 }
 
@@ -979,8 +980,7 @@ fn split_string(value: &str) -> Vec<String> {
     }
 }
 
-#[derive(Debug, PartialEq, EnumString)]
-#[strum(serialize_all = "snake_case")]
+#[derive(Debug, PartialEq)]
 enum BuildInternal {
     Auto,
     Always,
@@ -989,6 +989,19 @@ enum BuildInternal {
 
 impl Default for BuildInternal {
     fn default() -> Self {
-        BuildInternal::Never
+        Self::Never
+    }
+}
+
+impl FromStr for BuildInternal {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "auto" => Ok(Self::Auto),
+            "always" => Ok(Self::Always),
+            "never" => Ok(Self::Never),
+            v => Err(format!("Unknown value `{}`", v)),
+        }
     }
 }
