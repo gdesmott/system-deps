@@ -179,49 +179,78 @@ use std::env;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use thiserror::Error;
 use version_compare::VersionCompare;
 
 mod metadata;
 use metadata::MetaData;
 
 /// system-deps errors
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum Error {
     /// pkg-config error
-    #[error(transparent)]
-    PkgConfig(#[from] pkg_config::Error),
+    PkgConfig(pkg_config::Error),
     /// One of the `Config::add_build_internal` closures failed
-    #[error("Failed to build {0}: {1}")]
-    BuildInternalClosureError(String, #[source] BuildInternalClosureError),
+    BuildInternalClosureError(String, BuildInternalClosureError),
     /// Failed to read `Cargo.toml`
-    #[error("{0}")]
-    FailToRead(String, #[source] std::io::Error),
+    FailToRead(String, std::io::Error),
     /// Raised when an error is detected in the metadata defined in `Cargo.toml`
-    #[error("{0}")]
     InvalidMetadata(String),
     /// Raised when dependency defined manually using `SYSTEM_DEPS_$NAME_NO_PKG_CONFIG`
     /// did not define at least one lib using `SYSTEM_DEPS_$NAME_LIB` or
     /// `SYSTEM_DEPS_$NAME_LIB_FRAMEWORK`
-    #[error("You should define at least one lib using {} or {}", EnvVariable::new_lib(.0).to_string(), EnvVariable::new_lib_framework(.0))]
     MissingLib(String),
     /// An environment variable in the form of `SYSTEM_DEPS_$NAME_BUILD_INTERNAL`
     /// contained an invalid value (allowed: `auto`, `always`, `never`)
-    #[error("{0}")]
     BuildInternalInvalid(String),
     /// system-deps has been asked to internally build a lib, through
     /// `SYSTEM_DEPS_$NAME_BUILD_INTERNAL=always' or `SYSTEM_DEPS_$NAME_BUILD_INTERNAL=auto',
     /// but not closure has been defined using `Config::add_build_internal` to build
     /// this lib
-    #[error("Missing build internal closure for {0} (version {1})")]
     BuildInternalNoClosure(String, String),
     /// The library which has been build internally does not match the
     /// required version defined in `Cargo.toml`
-    #[error("Internally built {0} {1} but minimum required version is {2}")]
     BuildInternalWrongVersion(String, String, String),
     /// The `cfg()` expression used in `Cargo.toml` is currently not supported
-    #[error("Unsupported cfg() expression: {0}")]
     UnsupportedCfg(String),
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::BuildInternalClosureError(_, e) => Some(e),
+            Self::FailToRead(_, e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PkgConfig(e) => write!(f, "{}", e),
+            Self::BuildInternalClosureError(s, e) => write!(f, "Failed to build {}: {}", s, e),
+            Self::FailToRead(s, _) => write!(f, "{}", s),
+            Self::InvalidMetadata(s) => write!(f, "{}", s),
+            Self::MissingLib(s) => write!(
+                f,
+                "You should define at least one lib using {} or {}",
+                EnvVariable::new_lib(s).to_string(),
+                EnvVariable::new_lib_framework(s),
+            ),
+            Self::BuildInternalInvalid(s) => write!(f, "{}", s),
+            Self::BuildInternalNoClosure(s1, s2) => write!(
+                f,
+                "Missing build internal closure for {} (version {})",
+                s1, s2
+            ),
+            Self::BuildInternalWrongVersion(s1, s2, s3) => write!(
+                f,
+                "Internally built {} {} but minimum required version is {}",
+                s1, s2, s3
+            ),
+            Self::UnsupportedCfg(s) => write!(f, "Unsupported cfg() expression: {}", s),
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -382,14 +411,12 @@ impl Dependencies {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 /// Error used in return value of `Config::add_build_internal` closures
 pub enum BuildInternalClosureError {
     /// `pkg-config` error
-    #[error(transparent)]
-    PkgConfig(#[from] pkg_config::Error),
+    PkgConfig(pkg_config::Error),
     /// General failure
-    #[error("{0}")]
     Failed(String),
 }
 
@@ -402,6 +429,24 @@ impl BuildInternalClosureError {
     /// * `details`: human-readable details about the failure
     pub fn failed(details: &str) -> Self {
         Self::Failed(details.to_string())
+    }
+}
+
+impl std::error::Error for BuildInternalClosureError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::PkgConfig(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for BuildInternalClosureError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::PkgConfig(e) => write!(f, "{}", e),
+            Self::Failed(s) => write!(f, "{}", s),
+        }
     }
 }
 
@@ -664,7 +709,7 @@ impl Config {
                             // If the dep is optional just skip it
                             continue;
                         } else {
-                            return Err(e.into());
+                            return Err(Error::PkgConfig(e));
                         }
                     }
                 }
@@ -867,7 +912,7 @@ impl Library {
                 lib.statik = true;
                 Ok(lib)
             }
-            Err(e) => Err(e.into()),
+            Err(e) => Err(BuildInternalClosureError::PkgConfig(e)),
         }
     }
 }
