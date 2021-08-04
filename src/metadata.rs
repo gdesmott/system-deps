@@ -2,7 +2,6 @@
 
 use std::{fs, io::Read, path::Path};
 
-use anyhow::{anyhow, bail, Error};
 use toml::{map::Map, Value};
 
 #[derive(Debug, PartialEq)]
@@ -73,10 +72,10 @@ impl VersionOverrideBuilder {
         }
     }
 
-    fn build(self) -> Result<VersionOverride, Error> {
+    fn build(self) -> Result<VersionOverride, String> {
         let version = self
             .version
-            .ok_or_else(|| anyhow!("missing version field"))?;
+            .ok_or_else(|| "missing version field".to_owned())?;
 
         Ok(VersionOverride {
             key: self.version_id,
@@ -102,17 +101,17 @@ impl MetaData {
             .map_err(|e| crate::Error::InvalidMetadata(format!("{}: {}", path.display(), e)))
     }
 
-    fn from_str(manifest_str: String) -> Result<Self, Error> {
+    fn from_str(manifest_str: String) -> Result<Self, String> {
         let toml = manifest_str
             .parse::<toml::Value>()
-            .map_err(|e| anyhow!("error parsing TOML: {:?}", e))?;
+            .map_err(|e| format!("error parsing TOML: {:?}", e))?;
 
         let key = "package.metadata.system-deps";
         let meta = toml
             .get("package")
             .and_then(|v| v.get("metadata"))
             .and_then(|v| v.get("system-deps"))
-            .ok_or_else(|| anyhow!("no {}", key))?;
+            .ok_or_else(|| format!("no {}", key))?;
 
         let deps = Self::parse_deps_table(meta, key, true)?;
 
@@ -123,17 +122,17 @@ impl MetaData {
         table: &Value,
         key: &str,
         allow_cfg: bool,
-    ) -> Result<Vec<Dependency>, Error> {
+    ) -> Result<Vec<Dependency>, String> {
         let table = table
             .as_table()
-            .ok_or_else(|| anyhow!("{} not a table", key))?;
+            .ok_or_else(|| format!("{} not a table", key))?;
 
         let mut deps = Vec::new();
 
         for (name, value) in table {
             if name.starts_with("cfg(") {
                 if allow_cfg {
-                    let cfg_exp = cfg_expr::Expression::parse(name)?;
+                    let cfg_exp = cfg_expr::Expression::parse(name).map_err(|e| e.to_string())?;
 
                     for mut dep in
                         Self::parse_deps_table(value, &format!("{}.{}", key, name), false)?
@@ -142,11 +141,11 @@ impl MetaData {
                         deps.push(dep);
                     }
                 } else {
-                    bail!("{}.{}: cfg() cannot be nested", key, name);
+                    return Err(format!("{}.{}: cfg() cannot be nested", key, name));
                 }
             } else {
                 let dep =
-                    Self::parse_dep(name, value).map_err(|e| anyhow!("{}.{}: {}", key, name, e))?;
+                    Self::parse_dep(name, value).map_err(|e| format!("{}.{}: {}", key, name, e))?;
                 deps.push(dep);
             }
         }
@@ -154,7 +153,7 @@ impl MetaData {
         Ok(deps)
     }
 
-    fn parse_dep(name: &str, value: &Value) -> Result<Dependency, Error> {
+    fn parse_dep(name: &str, value: &Value) -> Result<Dependency, String> {
         let mut dep = Dependency::new(name);
 
         match value {
@@ -166,14 +165,14 @@ impl MetaData {
                 Self::parse_dep_table(&mut dep, t)?;
             }
             _ => {
-                bail!("not a string or table");
+                return Err("not a string or table".to_owned());
             }
         }
 
         Ok(dep)
     }
 
-    fn parse_dep_table(dep: &mut Dependency, t: &Map<String, Value>) -> Result<(), Error> {
+    fn parse_dep_table(dep: &mut Dependency, t: &Map<String, Value>) -> Result<(), String> {
         for (key, value) in t {
             match (key.as_str(), value) {
                 ("feature", &toml::Value::String(ref s)) => {
@@ -205,11 +204,11 @@ impl MetaData {
                                 builder.optional = Some(optional);
                             }
                             _ => {
-                                bail!(
+                                return Err(format!(
                                     "unexpected version settings key: {} type: {}",
                                     k,
                                     v.type_str()
-                                )
+                                ));
                             }
                         }
                     }
@@ -217,7 +216,7 @@ impl MetaData {
                     dep.version_overrides.push(builder.build()?);
                 }
                 _ => {
-                    bail!("unexpected key {} type {}", key, value.type_str());
+                    return Err(format!("unexpected key {} type {}", key, value.type_str()));
                 }
             }
         }
