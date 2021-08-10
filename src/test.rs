@@ -10,7 +10,9 @@ use assert_matches::assert_matches;
 
 use crate::Dependencies;
 
-use super::{BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, Library};
+use super::{
+    BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, InternalLib, Library,
+};
 
 lazy_static! {
     static ref LOCK: Mutex<()> = Mutex::new(());
@@ -347,7 +349,13 @@ fn override_lib() {
     )
     .unwrap();
     let testlib = libraries.get_by_name("testlib").unwrap();
-    assert_eq!(testlib.libs, vec!["overrided-test", "other-test"]);
+    assert_eq!(
+        testlib.libs,
+        vec!["overrided-test", "other-test"]
+            .into_iter()
+            .map(|name| InternalLib::new(name.to_string(), false))
+            .collect::<Vec<InternalLib>>()
+    );
 
     assert_flags(
         flags,
@@ -473,7 +481,7 @@ fn override_unset() {
     let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.link_paths, Vec::<PathBuf>::new());
     assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
-    assert_eq!(testlib.libs, Vec::<String>::new());
+    assert_eq!(testlib.libs, Vec::<InternalLib>::new());
     assert_eq!(testlib.frameworks, Vec::<String>::new());
     assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
 
@@ -514,7 +522,10 @@ fn override_no_pkg_config() {
     let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(testlib.link_paths, Vec::<PathBuf>::new());
     assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
-    assert_eq!(testlib.libs, vec!["custom-lib"]);
+    assert_eq!(
+        testlib.libs,
+        vec![InternalLib::new("custom-lib".to_string(), false)]
+    );
     assert_eq!(testlib.frameworks, Vec::<String>::new());
     assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
 
@@ -890,51 +901,98 @@ fn invalid_cfg() {
 
 #[test]
 fn static_one_lib() {
-    let (libraries, flags) =
-        toml("toml-good", vec![("SYSTEM_DEPS_TESTLIB_LINK", "static")]).unwrap();
+    let (libraries, flags) = toml(
+        "toml-static",
+        vec![("SYSTEM_DEPS_TESTSTATICLIB_LINK", "static")],
+    )
+    .unwrap();
 
     let testdata = libraries.get_by_name("testdata").unwrap();
     assert!(!testdata.statik);
 
-    let testlib = libraries.get_by_name("testlib").unwrap();
+    let testlib = libraries.get_by_name("teststaticlib").unwrap();
     assert!(testlib.statik);
 
     assert_flags(
         flags,
-        r#"cargo:rustc-link-search=native=/usr/lib/
-cargo:rustc-link-search=framework=/usr/lib/
-cargo:rustc-link-lib=static=test
+        format!(
+            r#"cargo:rustc-link-search=native=./src/tests/lib/
+cargo:rustc-link-search=framework=./src/tests/lib/
+cargo:rustc-link-lib=static=teststatic
 cargo:rustc-link-lib=framework=someframework
-cargo:include=/usr/include/testlib
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:include=./src/tests/include/testlib
 cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
 "#,
+        )
+        .as_str(),
     );
 }
 
 #[test]
 fn static_all_libs() {
+    let (libraries, flags) = toml("toml-static", vec![("SYSTEM_DEPS_LINK", "static")]).unwrap();
+
+    let testdata = libraries.get_by_name("testdata").unwrap();
+    assert!(testdata.statik);
+
+    let testlib = libraries.get_by_name("teststaticlib").unwrap();
+    assert!(testlib.statik);
+
+    assert_flags(
+        flags,
+        r#"cargo:rustc-link-search=native=./src/tests/lib/
+cargo:rustc-link-search=framework=./src/tests/lib/
+cargo:rustc-link-lib=static=teststatic
+cargo:rustc-link-lib=framework=someframework
+cargo:include=./src/tests/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+"#,
+    );
+}
+
+#[test]
+fn static_lib_not_available() {
     let (libraries, flags) = toml("toml-good", vec![("SYSTEM_DEPS_LINK", "static")]).unwrap();
 
     let testdata = libraries.get_by_name("testdata").unwrap();
     assert!(testdata.statik);
 
+    // testlib is not available as static library, which is why it is linked dynamically,
+    // as seen below
     let testlib = libraries.get_by_name("testlib").unwrap();
     assert!(testlib.statik);
 
@@ -942,27 +1000,27 @@ fn static_all_libs() {
         flags,
         r#"cargo:rustc-link-search=native=/usr/lib/
 cargo:rustc-link-search=framework=/usr/lib/
-cargo:rustc-link-lib=static=test
+cargo:rustc-link-lib=test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
 cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
-cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
 "#,
     );
 }

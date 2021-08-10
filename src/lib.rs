@@ -309,7 +309,15 @@ impl Dependencies {
 
     /// Returns a vector of [Library::libs] of each library, removing duplicates.
     pub fn all_libs(&self) -> Vec<&str> {
-        self.aggregate_str(|l| &l.libs)
+        let mut v = self
+            .libs
+            .values()
+            .map(|l| l.libs.iter().map(|lib| lib.name.as_str()))
+            .flatten()
+            .collect::<Vec<_>>();
+        v.sort_unstable();
+        v.dedup();
+        v
     }
 
     /// Returns a vector of [Library::link_paths] of each library, removing duplicates.
@@ -359,7 +367,10 @@ impl Dependencies {
                 lib.framework_paths = split_paths(&value);
             }
             if let Some(value) = env.get(&EnvVariable::new_lib(name)) {
-                lib.libs = split_string(&value);
+                lib.libs = split_string(&value)
+                    .into_iter()
+                    .map(|l| InternalLib::new(l, false))
+                    .collect();
             }
             if let Some(value) = env.get(&EnvVariable::new_lib_framework(name)) {
                 lib.frameworks = split_string(&value);
@@ -390,9 +401,12 @@ impl Dependencies {
             lib.framework_paths.iter().for_each(|f| {
                 flags.add(BuildFlag::SearchFramework(f.to_string_lossy().to_string()))
             });
-            lib.libs
-                .iter()
-                .for_each(|l| flags.add(BuildFlag::Lib(l.clone(), lib.statik)));
+            lib.libs.iter().for_each(|l| {
+                flags.add(BuildFlag::Lib(
+                    l.name.clone(),
+                    lib.statik && l.is_static_available,
+                ))
+            });
             lib.frameworks
                 .iter()
                 .for_each(|f| flags.add(BuildFlag::LibFramework(f.clone())));
@@ -813,6 +827,24 @@ pub enum Source {
     EnvVariables,
 }
 
+#[derive(Debug, PartialEq)]
+/// Internal library name and if a static library is available on the system
+pub struct InternalLib {
+    /// Name of the library
+    pub name: String,
+    /// Indicates if a static library is available on the system
+    pub is_static_available: bool,
+}
+
+impl InternalLib {
+    fn new(name: String, is_static_available: bool) -> Self {
+        InternalLib {
+            name,
+            is_static_available,
+        }
+    }
+}
+
 #[derive(Debug)]
 /// A system dependency
 pub struct Library {
@@ -821,7 +853,7 @@ pub struct Library {
     /// From where the library settings have been retrieved
     pub source: Source,
     /// libraries the linker should link on
-    pub libs: Vec<String>,
+    pub libs: Vec<InternalLib>,
     /// directories where the compiler should look for libraries
     pub link_paths: Vec<PathBuf>,
     /// frameworks the linker should link on
@@ -840,10 +872,41 @@ pub struct Library {
 
 impl Library {
     fn from_pkg_config(name: &str, l: pkg_config::Library) -> Self {
+        // taken from: https://github.com/rust-lang/pkg-config-rs/blob/54325785816695df031cef3b26b6a9a203bbc01b/src/lib.rs#L502
+        let system_roots = if cfg!(target_os = "macos") {
+            vec![PathBuf::from("/Library"), PathBuf::from("/System")]
+        } else {
+            let sysroot = env::var_os("PKG_CONFIG_SYSROOT_DIR")
+                .or_else(|| env::var_os("SYSROOT"))
+                .map(PathBuf::from);
+
+            if cfg!(target_os = "windows") {
+                if let Some(sysroot) = sysroot {
+                    vec![sysroot]
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![sysroot.unwrap_or_else(|| PathBuf::from("/usr"))]
+            }
+        };
+
+        let is_static_available = |name: &String| -> bool {
+            let libname = format!("lib{}.a", name);
+
+            l.link_paths.iter().any(|dir| {
+                !system_roots.iter().any(|sys| dir.starts_with(sys)) && dir.join(&libname).exists()
+            })
+        };
+
         Self {
             name: name.to_string(),
             source: Source::PkgConfig,
-            libs: l.libs,
+            libs: l
+                .libs
+                .iter()
+                .map(|lib| InternalLib::new(lib.to_owned(), is_static_available(lib)))
+                .collect(),
             link_paths: l.link_paths,
             include_paths: l.include_paths,
             frameworks: l.frameworks,

@@ -1,0 +1,4 @@
+[package.metadata.system-deps]
+testdata = "4"
+teststaticlib = { version = "1", feature = "test-feature" }
+testmore = { version = "2", feature = "another-test-feature" }
