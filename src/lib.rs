@@ -213,9 +213,16 @@ pub enum Error {
     UnsupportedCfg(String),
 }
 
+impl From<pkg_config::Error> for Error {
+    fn from(err: pkg_config::Error) -> Self {
+        Self::PkgConfig(err)
+    }
+}
+
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::PkgConfig(e) => Some(e),
             Self::BuildInternalClosureError(_, e) => Some(e),
             Self::FailToRead(_, e) => Some(e),
             _ => None,
@@ -406,7 +413,7 @@ impl Dependencies {
         flags.add(BuildFlag::RerunIfEnvChanged(EnvVariable::new_link(None)));
 
         for (name, _lib) in self.libs.iter() {
-            EnvVariable::add_all_variants(&mut flags, name);
+            EnvVariable::set_rerun_if_changed_for_all_variants(&mut flags, name);
         }
 
         Ok(flags)
@@ -420,6 +427,12 @@ pub enum BuildInternalClosureError {
     PkgConfig(pkg_config::Error),
     /// General failure
     Failed(String),
+}
+
+impl From<pkg_config::Error> for BuildInternalClosureError {
+    fn from(err: pkg_config::Error) -> Self {
+        Self::PkgConfig(err)
+    }
 }
 
 impl BuildInternalClosureError {
@@ -511,7 +524,7 @@ impl EnvVariable {
         }
     }
 
-    fn add_all_variants(flags: &mut BuildFlags, name: &str) {
+    fn set_rerun_if_changed_for_all_variants(flags: &mut BuildFlags, name: &str) {
         #[inline]
         fn add_to_flags(flags: &mut BuildFlags, var: EnvVariable) {
             flags.add(BuildFlag::RerunIfEnvChanged(var));
@@ -711,7 +724,7 @@ impl Config {
                             // If the dep is optional just skip it
                             continue;
                         } else {
-                            return Err(Error::PkgConfig(e));
+                            return Err(e.into());
                         }
                     }
                 }
@@ -914,7 +927,7 @@ impl Library {
                 lib.statik = true;
                 Ok(lib)
             }
-            Err(e) => Err(BuildInternalClosureError::PkgConfig(e)),
+            Err(e) => Err(e.into()),
         }
     }
 }
@@ -1041,14 +1054,29 @@ impl Default for BuildInternal {
 }
 
 impl FromStr for BuildInternal {
-    type Err = String;
+    type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             "auto" => Ok(Self::Auto),
             "always" => Ok(Self::Always),
             "never" => Ok(Self::Never),
-            v => Err(format!("Unknown value `{}`", v)),
+            v => Err(ParseError::VariantNotFound(v.to_owned())),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum ParseError {
+    VariantNotFound(String),
+}
+
+impl std::error::Error for ParseError {}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::VariantNotFound(v) => write!(f, "Unknown variant: `{}`", v),
         }
     }
 }

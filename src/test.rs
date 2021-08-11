@@ -153,12 +153,18 @@ fn missing_file() {
 
 #[test]
 fn missing_key() {
-    toml_err_invalid("toml-missing-key", "no package.metadata.system-deps");
+    toml_err_invalid(
+        "toml-missing-key",
+        "missing key `package.metadata.system-deps`",
+    );
 }
 
 #[test]
 fn not_table() {
-    toml_err_invalid("toml-not-table", "package.metadata.system-deps not a table");
+    toml_err_invalid(
+        "toml-not-table",
+        "`package.metadata.system-deps` is not a table",
+    );
 }
 
 #[test]
@@ -170,7 +176,7 @@ fn version_missing() {
 fn version_not_string() {
     toml_err_invalid(
         "toml-version-not-string",
-        "metadata.system-deps.testlib: not a string or table",
+        "`package.metadata.system-deps.testlib`: not a string or a table",
     );
 }
 
