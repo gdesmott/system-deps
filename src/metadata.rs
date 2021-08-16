@@ -154,7 +154,7 @@ impl VersionOverrideBuilder {
     fn build(self) -> Result<VersionOverride, VersionOverrideBuilderError> {
         let version = self
             .version
-            .ok_or_else(|| VersionOverrideBuilderError::MissingVersionField)?;
+            .ok_or(VersionOverrideBuilderError::MissingVersionField)?;
 
         Ok(VersionOverride {
             key: self.version_id,

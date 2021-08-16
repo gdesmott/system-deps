@@ -290,7 +290,7 @@ impl Dependencies {
             .flatten()
             .map(|s| s.as_str())
             .collect::<Vec<_>>();
-        v.sort();
+        v.sort_unstable();
         v.dedup();
         v
     }
