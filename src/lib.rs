@@ -307,32 +307,32 @@ impl Dependencies {
         v
     }
 
-    /// An iterator returning each [Library::libs] of each library, removing duplicates.
+    /// Returns a vector of [Library::libs] of each library, removing duplicates.
     pub fn all_libs(&self) -> Vec<&str> {
         self.aggregate_str(|l| &l.libs)
     }
 
-    /// An iterator returning each [Library::link_paths] of each library, removing duplicates.
+    /// Returns a vector of [Library::link_paths] of each library, removing duplicates.
     pub fn all_link_paths(&self) -> Vec<&PathBuf> {
         self.aggregate_path_buf(|l| &l.link_paths)
     }
 
-    /// An iterator returning each [Library::frameworks] of each library, removing duplicates.
+    /// Returns a vector of [Library::frameworks] of each library, removing duplicates.
     pub fn all_frameworks(&self) -> Vec<&str> {
         self.aggregate_str(|l| &l.frameworks)
     }
 
-    /// An iterator returning each [Library::framework_paths] of each library, removing duplicates.
+    /// Returns a vector of [Library::framework_paths] of each library, removing duplicates.
     pub fn all_framework_paths(&self) -> Vec<&PathBuf> {
         self.aggregate_path_buf(|l| &l.framework_paths)
     }
 
-    /// An iterator returning each [Library::include_paths] of each library, removing duplicates.
+    /// Returns a vector of [Library::include_paths] of each library, removing duplicates.
     pub fn all_include_paths(&self) -> Vec<&PathBuf> {
         self.aggregate_path_buf(|l| &l.include_paths)
     }
 
-    /// An iterator returning each [Library::defines] of each library, removing duplicates.
+    /// Returns a vector of [Library::defines] of each library, removing duplicates.
     pub fn all_defines(&self) -> Vec<(&str, &Option<String>)> {
         let mut v = self
             .libs
