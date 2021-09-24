@@ -79,7 +79,7 @@ fn good() {
     assert_eq!(testdata.version, "4.5.6");
     assert!(libraries.get_by_name("testmore").is_none());
 
-    assert_eq!(libraries.iter().count(), 2);
+    assert_eq!(libraries.iter().len(), 2);
 
     assert_flags(
         flags,

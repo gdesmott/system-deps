@@ -274,11 +274,17 @@ impl Dependencies {
         self.libs.get(name)
     }
 
-    /// An iterator visiting all system dependencies in arbitrary order.
+    /// A vector listing all system dependencies in sorted (for build reproducibility) order.
     /// The first element of the tuple is the name of the `toml` key defining the
     /// dependency in `Cargo.toml`.
-    pub fn iter(&self) -> impl Iterator<Item = (&str, &Library)> {
-        self.libs.iter().map(|(k, v)| (k.as_str(), v))
+    pub fn iter(&self) -> Vec<(&str, &Library)> {
+        let mut v = self
+            .libs
+            .iter()
+            .map(|(k, v)| (k.as_str(), v))
+            .collect::<Vec<_>>();
+        v.sort_by_key(|x| x.0);
+        v
     }
 
     fn aggregate_str<F: Fn(&Library) -> &Vec<String>>(&self, getter: F) -> Vec<&str> {
@@ -384,14 +390,14 @@ impl Dependencies {
         let mut flags = BuildFlags::new();
         let mut include_paths = Vec::new();
 
-        for (name, lib) in self.libs.iter() {
+        for (name, lib) in self.iter() {
             include_paths.extend(lib.include_paths.clone());
 
             if lib.source == Source::EnvVariables
                 && lib.libs.is_empty()
                 && lib.frameworks.is_empty()
             {
-                return Err(Error::MissingLib(name.clone()));
+                return Err(Error::MissingLib(name.to_string()));
             }
 
             lib.link_paths
