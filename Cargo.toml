@@ -13,7 +13,7 @@ readme = "README.md"
 [dependencies]
 pkg-config = "0.3"
 toml = { version = "0.5", default-features = false }
-version-compare = "0.0.11"
+version-compare = "0.1"
 heck = "0.3"
 cfg-expr = "0.9"
 

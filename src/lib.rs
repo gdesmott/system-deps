@@ -178,7 +178,6 @@ use std::env;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use version_compare::VersionCompare;
 
 mod metadata;
 use metadata::MetaData;
@@ -688,7 +687,7 @@ impl Config {
                 // Pick the highest feature enabled version
                 if !enabled_feature_overrides.is_empty() {
                     enabled_feature_overrides.sort_by(|a, b| {
-                        VersionCompare::compare(&a.version, &b.version)
+                        version_compare::compare(&a.version, &b.version)
                             .expect("failed to compare versions")
                             .ord()
                             .expect("invalid version")
@@ -784,8 +783,8 @@ impl Config {
         };
 
         // Check that the lib built internally matches the required version
-        match VersionCompare::compare(&lib.version, version) {
-            Ok(version_compare::CompOp::Lt) => Err(Error::BuildInternalWrongVersion(
+        match version_compare::compare(&lib.version, version) {
+            Ok(version_compare::Cmp::Lt) => Err(Error::BuildInternalWrongVersion(
                 name.into(),
                 lib.version.clone(),
                 version.into(),
