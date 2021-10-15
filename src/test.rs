@@ -915,8 +915,7 @@ fn static_one_lib() {
 
     assert_flags(
         flags,
-        format!(
-            r#"cargo:rustc-link-search=native=./src/tests/lib/
+        r#"cargo:rustc-link-search=native=./src/tests/lib/
 cargo:rustc-link-search=framework=./src/tests/lib/
 cargo:rustc-link-lib=static=teststatic
 cargo:rustc-link-lib=framework=someframework
@@ -939,8 +938,8 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
-"#,
-        )
+"#
+        .to_string()
         .as_str(),
     );
 }

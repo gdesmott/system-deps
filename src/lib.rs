@@ -786,7 +786,7 @@ impl Config {
         match version_compare::compare(&lib.version, version) {
             Ok(version_compare::Cmp::Lt) => Err(Error::BuildInternalWrongVersion(
                 name.into(),
-                lib.version.clone(),
+                lib.version,
                 version.into(),
             )),
             _ => Ok(lib),
