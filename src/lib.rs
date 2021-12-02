@@ -291,7 +291,7 @@ impl Dependencies {
         let mut v = self
             .libs
             .values()
-            .map(|l| getter(l))
+            .map(getter)
             .flatten()
             .map(|s| s.as_str())
             .collect::<Vec<_>>();
@@ -301,12 +301,7 @@ impl Dependencies {
     }
 
     fn aggregate_path_buf<F: Fn(&Library) -> &Vec<PathBuf>>(&self, getter: F) -> Vec<&PathBuf> {
-        let mut v = self
-            .libs
-            .values()
-            .map(|l| getter(l))
-            .flatten()
-            .collect::<Vec<_>>();
+        let mut v = self.libs.values().map(getter).flatten().collect::<Vec<_>>();
         v.sort();
         v.dedup();
         v
