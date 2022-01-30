@@ -172,7 +172,7 @@ extern crate lazy_static;
 #[cfg(test)]
 mod test;
 
-use heck::{ShoutySnakeCase, SnakeCase};
+use heck::{ToShoutySnakeCase, ToSnakeCase};
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
