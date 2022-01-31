@@ -239,7 +239,7 @@ impl fmt::Display for Error {
             Self::MissingLib(s) => write!(
                 f,
                 "You should define at least one lib using {} or {}",
-                EnvVariable::new_lib(s).to_string(),
+                EnvVariable::new_lib(s),
                 EnvVariable::new_lib_framework(s),
             ),
             Self::BuildInternalInvalid(s) => write!(f, "{}", s),
