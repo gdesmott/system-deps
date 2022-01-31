@@ -135,9 +135,10 @@ fn toml_pkg_config_err_version(
     let err = toml(path, env_vars).unwrap_err();
     match err {
         Error::PkgConfig(e) => match e {
-            pkg_config::Error::Failure {
+            pkg_config::Error::ProbeFailure {
                 command: cmd,
                 output: _,
+                name: _,
             } => {
                 let s = format!(">= {}\"", expected_version);
                 assert!(cmd.ends_with(&s));
