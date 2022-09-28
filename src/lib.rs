@@ -291,8 +291,7 @@ impl Dependencies {
         let mut v = self
             .libs
             .values()
-            .map(getter)
-            .flatten()
+            .flat_map(getter)
             .map(|s| s.as_str())
             .collect::<Vec<_>>();
         v.sort_unstable();
@@ -301,7 +300,7 @@ impl Dependencies {
     }
 
     fn aggregate_path_buf<F: Fn(&Library) -> &Vec<PathBuf>>(&self, getter: F) -> Vec<&PathBuf> {
-        let mut v = self.libs.values().map(getter).flatten().collect::<Vec<_>>();
+        let mut v = self.libs.values().flat_map(getter).collect::<Vec<_>>();
         v.sort();
         v.dedup();
         v
@@ -312,8 +311,7 @@ impl Dependencies {
         let mut v = self
             .libs
             .values()
-            .map(|l| l.libs.iter().map(|lib| lib.name.as_str()))
-            .flatten()
+            .flat_map(|l| l.libs.iter().map(|lib| lib.name.as_str()))
             .collect::<Vec<_>>();
         v.sort_unstable();
         v.dedup();
@@ -345,8 +343,7 @@ impl Dependencies {
         let mut v = self
             .libs
             .values()
-            .map(|l| l.defines.iter())
-            .flatten()
+            .flat_map(|l| l.defines.iter())
             .map(|(k, v)| (k.as_str(), v))
             .collect::<Vec<_>>();
         v.sort();
@@ -818,7 +815,7 @@ impl Config {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 /// From where the library settings have been retrieved
 pub enum Source {
     /// Settings have been retrieved from `pkg-config`
@@ -827,7 +824,7 @@ pub enum Source {
     EnvVariables,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 /// Internal library name and if a static library is available on the system
 pub struct InternalLib {
     /// Name of the library
