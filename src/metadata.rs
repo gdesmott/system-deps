@@ -167,7 +167,7 @@ impl VersionOverrideBuilder {
 
 impl MetaData {
     pub(crate) fn from_file(path: &Path) -> Result<Self, crate::Error> {
-        let mut manifest = fs::File::open(&path).map_err(|e| {
+        let mut manifest = fs::File::open(path).map_err(|e| {
             crate::Error::FailToRead(format!("error opening {}", path.display()), e)
         })?;
 
