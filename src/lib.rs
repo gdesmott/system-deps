@@ -1,4 +1,5 @@
 #![allow(clippy::needless_doctest_main)]
+#![allow(clippy::result_large_err)]
 //!`system-deps` lets you write system dependencies in `Cargo.toml` metadata,
 //! rather than programmatically in `build.rs`. This makes those dependencies
 //! declarative, so other tools can read them as well.
