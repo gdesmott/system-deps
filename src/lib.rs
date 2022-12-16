@@ -980,7 +980,7 @@ impl Library {
             .statik(true)
             .probe(lib);
 
-        env::set_var("PKG_CONFIG_PATH", &old.unwrap_or_else(|_| "".into()));
+        env::set_var("PKG_CONFIG_PATH", old.unwrap_or_else(|_| "".into()));
 
         match pkg_lib {
             Ok(pkg_lib) => {
