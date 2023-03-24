@@ -255,29 +255,29 @@ impl MetaData {
     ) -> Result<(), MetadataError> {
         for (key, value) in t {
             match (key.as_str(), value) {
-                ("feature", &toml::Value::String(ref s)) => {
+                ("feature", toml::Value::String(s)) => {
                     dep.feature = Some(s.clone());
                 }
-                ("version", &toml::Value::String(ref s)) => {
+                ("version", toml::Value::String(s)) => {
                     dep.version = Some(s.clone());
                 }
-                ("name", &toml::Value::String(ref s)) => {
+                ("name", toml::Value::String(s)) => {
                     dep.name = Some(s.clone());
                 }
                 ("optional", &toml::Value::Boolean(optional)) => {
                     dep.optional = optional;
                 }
-                (version_feature, &toml::Value::Table(ref version_settings))
+                (version_feature, toml::Value::Table(version_settings))
                     if version_feature.starts_with('v') =>
                 {
                     let mut builder = VersionOverrideBuilder::new(version_feature);
 
                     for (k, v) in version_settings {
                         match (k.as_str(), v) {
-                            ("version", &toml::Value::String(ref feat_vers)) => {
+                            ("version", toml::Value::String(feat_vers)) => {
                                 builder.version = Some(feat_vers.into());
                             }
-                            ("name", &toml::Value::String(ref feat_name)) => {
+                            ("name", toml::Value::String(feat_name)) => {
                                 builder.full_name = Some(feat_name.into());
                             }
                             ("optional", &toml::Value::Boolean(optional)) => {

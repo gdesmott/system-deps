@@ -24,7 +24,7 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
         let _l = LOCK.lock();
         env::set_var(
             "PKG_CONFIG_PATH",
-            &env::current_dir().unwrap().join("src").join("tests"),
+            env::current_dir().unwrap().join("src").join("tests"),
         );
     }
 
