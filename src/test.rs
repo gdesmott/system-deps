@@ -346,13 +346,13 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 fn override_lib() {
     let (libraries, flags) = toml(
         "toml-good",
-        vec![("SYSTEM_DEPS_TESTLIB_LIB", "overrided-test other-test")],
+        vec![("SYSTEM_DEPS_TESTLIB_LIB", "overridden-test other-test")],
     )
     .unwrap();
     let testlib = libraries.get_by_name("testlib").unwrap();
     assert_eq!(
         testlib.libs,
-        vec!["overrided-test", "other-test"]
+        vec!["overridden-test", "other-test"]
             .into_iter()
             .map(|name| InternalLib::new(name.to_string(), false))
             .collect::<Vec<InternalLib>>()
@@ -362,7 +362,7 @@ fn override_lib() {
         flags,
         r#"cargo:rustc-link-search=native=/usr/lib/
 cargo:rustc-link-search=framework=/usr/lib/
-cargo:rustc-link-lib=overrided-test
+cargo:rustc-link-lib=overridden-test
 cargo:rustc-link-lib=other-test
 cargo:rustc-link-lib=framework=someframework
 cargo:include=/usr/include/testlib
@@ -392,18 +392,18 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 fn override_framework() {
     let (libraries, flags) = toml(
         "toml-good",
-        vec![("SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK", "overrided-framework")],
+        vec![("SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK", "overridden-framework")],
     )
     .unwrap();
     let testlib = libraries.get_by_name("testlib").unwrap();
-    assert_eq!(testlib.frameworks, vec!["overrided-framework"]);
+    assert_eq!(testlib.frameworks, vec!["overridden-framework"]);
 
     assert_flags(
         flags,
         r#"cargo:rustc-link-search=native=/usr/lib/
 cargo:rustc-link-search=framework=/usr/lib/
 cargo:rustc-link-lib=test
-cargo:rustc-link-lib=framework=overrided-framework
+cargo:rustc-link-lib=framework=overridden-framework
 cargo:include=/usr/include/testlib
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
@@ -724,7 +724,7 @@ fn build_internal_fail() {
 }
 
 #[test]
-fn build_internal_always_gobal() {
+fn build_internal_always_global() {
     let called = Rc::new(Cell::new((false, false)));
     let called_clone = called.clone();
     let called_clone2 = called.clone();
@@ -759,7 +759,7 @@ fn build_internal_always_gobal() {
 }
 
 #[test]
-fn build_internal_gobal_override() {
+fn build_internal_global_override() {
     // Request to build all libs using global var but disable it for a specific one
     let called = Rc::new(Cell::new((false, false)));
     let called_clone = called.clone();

@@ -582,7 +582,7 @@ pub struct Config {
 
 impl Default for Config {
     fn default() -> Self {
-        Self::new_with_env(EnvVariables::Environnement)
+        Self::new_with_env(EnvVariables::Environment)
     }
 }
 
@@ -995,7 +995,7 @@ impl Library {
 
 #[derive(Debug)]
 enum EnvVariables {
-    Environnement,
+    Environment,
     #[cfg(test)]
     Mock(HashMap<&'static str, String>),
 }
@@ -1018,7 +1018,7 @@ trait EnvVariablesExt<T> {
 impl EnvVariablesExt<&str> for EnvVariables {
     fn get(&self, var: &str) -> Option<String> {
         match self {
-            EnvVariables::Environnement => env::var(var).ok(),
+            EnvVariables::Environment => env::var(var).ok(),
             #[cfg(test)]
             EnvVariables::Mock(vars) => vars.get(var).cloned(),
         }
