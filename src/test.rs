@@ -867,7 +867,7 @@ fn aggregate() {
 fn os_specific() {
     let (libraries, _) = toml(
         "toml-os-specific",
-        vec![("TARGET", "x86_64-unknown-linux-gnu")],
+        vec![("TARGET", "x86_64-alpine-linux-musl")],
     )
     .unwrap();
     assert!(libraries.get_by_name("testdata").is_some());

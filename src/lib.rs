@@ -804,13 +804,21 @@ impl Config {
             .env
             .get("TARGET")
             .expect("no TARGET env variable defined");
-        let target = get_builtin_target_by_triple(&target)
-            .unwrap_or_else(|| panic!("Invalid TARGET: {}", target));
 
-        let res = cfg.eval(|pred| match pred {
-            Predicate::Target(tp) => Some(tp.matches(target)),
-            _ => None,
-        });
+        let res = if let Some(target) = get_builtin_target_by_triple(&target) {
+            cfg.eval(|pred| match pred {
+                Predicate::Target(tp) => Some(tp.matches(target)),
+                _ => None,
+            })
+        } else {
+            // Attempt to parse the triple, the target is not an official builtin
+            let triple: cfg_expr::target_lexicon::Triple = target.parse().unwrap_or_else(|e| panic!("TARGET {} is not a builtin target, and it could not be parsed as a valid triplet: {}", target, e));
+
+            cfg.eval(|pred| match pred {
+                Predicate::Target(tp) => Some(tp.matches(&triple)),
+                _ => None,
+            })
+        };
 
         res.ok_or_else(|| Error::UnsupportedCfg(cfg.original().to_string()))
     }
