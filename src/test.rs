@@ -222,6 +222,91 @@ fn override_name() {
 }
 
 #[test]
+fn fallback_names() {
+    let (libraries, flags) = toml("toml-fallback-names", vec![]).unwrap();
+    let testlib = libraries.get_by_name("test_lib").unwrap();
+    assert_eq!(testlib.name, "testlib");
+    assert_eq!(testlib.version, "1.2.3");
+
+    eprintln!();
+    eprintln!("{flags}");
+    assert_flags(
+        flags,
+        r#"cargo:rustc-link-search=native=/usr/lib/
+cargo:rustc-link-search=framework=/usr/lib/
+cargo:rustc-link-lib=test
+cargo:rustc-link-lib=framework=someframework
+cargo:include=/usr/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+"#,
+    );
+}
+
+#[test]
+fn version_fallback_names() {
+    let (libraries, flags) = toml("toml-version-fallback-names", vec![]).unwrap();
+    let testlib = libraries.get_by_name("test_lib").unwrap();
+    assert_eq!(testlib.name, "testlib");
+    assert_eq!(testlib.version, "1.2.3");
+    assert_flags(
+        flags,
+        r#"cargo:rustc-link-search=native=/usr/lib/
+cargo:rustc-link-search=framework=/usr/lib/
+cargo:rustc-link-lib=test
+cargo:rustc-link-lib=framework=someframework
+cargo:include=/usr/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+"#,
+    );
+
+    // Now try with v2 feature enabled.
+    let (libraries, flags) = toml(
+        "toml-version-fallback-names",
+        vec![("CARGO_FEATURE_V2", "")],
+    )
+    .unwrap();
+    let testlib = libraries.get_by_name("test_lib").unwrap();
+    assert_eq!(testlib.name, "testlib-2.0");
+    assert_eq!(testlib.version, "2.0.0");
+
+    assert_flags(
+        flags,
+        r#"cargo:rustc-link-search=native=/usr/lib/
+cargo:rustc-link-lib=test
+cargo:include=/usr/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+"#,
+    );
+}
+
+#[test]
 fn feature_versions() {
     let (libraries, _) = toml("toml-feature-versions", vec![]).unwrap();
     let testdata = libraries.get_by_name("testdata").unwrap();
