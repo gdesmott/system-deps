@@ -9,11 +9,12 @@ pub(crate) struct MetaData {
     pub(crate) deps: Vec<Dependency>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Dependency {
     pub(crate) key: String,
     pub(crate) version: Option<String>,
     pub(crate) name: Option<String>,
+    pub(crate) fallback_names: Option<Vec<String>>,
     pub(crate) feature: Option<String>,
     pub(crate) optional: bool,
     pub(crate) cfg: Option<cfg_expr::Expression>,
@@ -28,8 +29,8 @@ impl Dependency {
         }
     }
 
-    pub(crate) fn lib_name(&self) -> String {
-        self.name.as_ref().unwrap_or(&self.key).to_string()
+    pub(crate) fn lib_name(&self) -> &str {
+        self.name.as_ref().unwrap_or(&self.key)
     }
 }
 
@@ -39,6 +40,7 @@ impl Default for Dependency {
             key: "".to_string(),
             version: None,
             name: None,
+            fallback_names: None,
             feature: None,
             optional: false,
             cfg: None,
@@ -68,6 +70,7 @@ enum MetadataError {
     NotATable(String),
     NestedCfg(String),
     NotStringOrTable(String),
+    NotString(String),
     CfgExpr(cfg_expr::ParseError),
     Toml(toml::de::Error),
     UnexpectedVersionSetting(String, String, String),
@@ -81,6 +84,7 @@ impl fmt::Display for MetadataError {
             Self::MissingKey(k) => write!(f, "missing key `{}`", k),
             Self::NotATable(k) => write!(f, "`{}` is not a table", k),
             Self::NestedCfg(k) => write!(f, "`{}`: cfg() cannot be nested", k),
+            Self::NotString(k) => write!(f, "`{}`: not a string", k),
             Self::NotStringOrTable(k) => write!(f, "`{}`: not a string or a table", k),
             Self::CfgExpr(e) => write!(f, "{}", e),
             Self::Toml(e) => write!(f, "error parsing TOML: {}", e),
@@ -126,11 +130,12 @@ impl From<VersionOverrideBuilderError> for MetadataError {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct VersionOverride {
     pub(crate) key: String,
     pub(crate) version: String,
     pub(crate) name: Option<String>,
+    pub(crate) fallback_names: Option<Vec<String>>,
     pub(crate) optional: Option<bool>,
 }
 
@@ -138,6 +143,7 @@ struct VersionOverrideBuilder {
     version_id: String,
     version: Option<String>,
     full_name: Option<String>,
+    fallback_names: Option<Vec<String>>,
     optional: Option<bool>,
 }
 
@@ -147,6 +153,7 @@ impl VersionOverrideBuilder {
             version_id: version_id.to_string(),
             version: None,
             full_name: None,
+            fallback_names: None,
             optional: None,
         }
     }
@@ -160,6 +167,7 @@ impl VersionOverrideBuilder {
             key: self.version_id,
             version,
             name: self.full_name,
+            fallback_names: self.fallback_names,
             optional: self.optional,
         })
     }
@@ -264,6 +272,10 @@ impl MetaData {
                 ("name", toml::Value::String(s)) => {
                     dep.name = Some(s.clone());
                 }
+                ("fallback-names", toml::Value::Array(values)) => {
+                    let key = format!("{}.{}", p_key, name);
+                    dep.fallback_names = Some(Self::parse_name_list(&key, values)?);
+                }
                 ("optional", &toml::Value::Boolean(optional)) => {
                     dep.optional = optional;
                 }
@@ -279,6 +291,10 @@ impl MetaData {
                             }
                             ("name", toml::Value::String(feat_name)) => {
                                 builder.full_name = Some(feat_name.into());
+                            }
+                            ("fallback-names", toml::Value::Array(values)) => {
+                                let key = format!("{}.{}.{}", p_key, name, version_feature);
+                                builder.fallback_names = Some(Self::parse_name_list(&key, values)?);
                             }
                             ("optional", &toml::Value::Boolean(optional)) => {
                                 builder.optional = Some(optional);
@@ -305,6 +321,19 @@ impl MetaData {
             }
         }
         Ok(())
+    }
+
+    fn parse_name_list(key: &str, values: &[Value]) -> Result<Vec<String>, MetadataError> {
+        values
+            .iter()
+            .enumerate()
+            .map(|(i, value)| {
+                value
+                    .as_str()
+                    .map(|x| x.to_owned())
+                    .ok_or_else(|| MetadataError::NotString(format!("{}[{}]", key, i)))
+            })
+            .collect()
     }
 }
 
@@ -380,6 +409,7 @@ mod tests {
                         key: "v1_2".into(),
                         version: "1.2".into(),
                         name: None,
+                        fallback_names: None,
                         optional: None,
                     }],
                     ..Default::default()
@@ -403,17 +433,87 @@ mod tests {
                             key: "v5".into(),
                             version: "5".into(),
                             name: None,
+                            fallback_names: None,
                             optional: None,
                         },
                         VersionOverride {
                             key: "v6".into(),
                             version: "6".into(),
                             name: None,
+                            fallback_names: None,
                             optional: None,
                         },
                     ],
                     ..Default::default()
                 },]
+            }
+        )
+    }
+
+    #[test]
+    fn parse_fallback_names() {
+        let m = parse_file("toml-fallback-names").unwrap();
+
+        assert_eq!(
+            m,
+            MetaData {
+                deps: vec![Dependency {
+                    key: "test_lib".into(),
+                    version: Some("1.0".into()),
+                    name: Some("nosuchlib".into()),
+                    fallback_names: Some(vec![
+                        "also-no-such-lib".into(),
+                        "testlib".into(),
+                        "should-not-get-here".into(),
+                    ]),
+                    version_overrides: vec![],
+                    ..Default::default()
+                }]
+            }
+        )
+    }
+
+    #[test]
+    fn parse_version_fallback_names() {
+        let m = parse_file("toml-version-fallback-names").unwrap();
+
+        assert_eq!(
+            m,
+            MetaData {
+                deps: vec![Dependency {
+                    key: "test_lib".into(),
+                    version: Some("0.1".into()),
+                    name: Some("nosuchlib".into()),
+                    fallback_names: Some(vec![
+                        "also-no-such-lib".into(),
+                        "testlib".into(),
+                        "should-not-get-here".into(),
+                    ]),
+                    version_overrides: vec![
+                        VersionOverride {
+                            key: "v1".into(),
+                            version: "1.0".into(),
+                            name: None,
+                            fallback_names: None,
+                            optional: None,
+                        },
+                        VersionOverride {
+                            key: "v2".into(),
+                            version: "2.0".into(),
+                            name: None,
+                            fallback_names: Some(vec!["testlib-2.0".into()]),
+                            optional: None,
+                        },
+                        VersionOverride {
+                            key: "v99".into(),
+                            version: "99.0".into(),
+                            name: None,
+                            fallback_names: Some(vec![]),
+                            optional: None,
+                        },
+                    ],
+                    ..Default::default()
+                }]
             }
         )
     }
@@ -440,6 +540,7 @@ mod tests {
                             key: "v5".into(),
                             version: "5.0".into(),
                             name: Some("testlib-5.0".into()),
+                            fallback_names: None,
                             optional: Some(false),
                         },],
                         ..Default::default()
@@ -451,6 +552,7 @@ mod tests {
                             key: "v3".into(),
                             version: "3.0".into(),
                             name: None,
+                            fallback_names: None,
                             optional: Some(true),
                         },],
                         ..Default::default()

@@ -64,6 +64,24 @@
 //! [package.metadata.system-deps]
 //! glib = { name = "glib-2.0", version = "2.64" }
 //! ```
+//!
+//! # Fallback library names
+//! Some libraries may be available under different names on different platforms or distributions.
+//! To allow for this, you can define fallback names to search for if the main library name does not work.
+//!
+//! ```toml
+//! [package.metadata.system-deps]
+//! aravis = { fallback-names = ["aravis-0.8"] }
+//! ```
+//!
+//! You may also specify different fallback names for different versions:
+//!
+//! [package.metadata.system-deps.libfoo]
+//! version = "0.1"
+//! fallback-names = ["libfoo-0.1"]
+//! v1 = { version = "1.0", fallback-names = ["libfoo1"] }
+//! v2 = { version = "2.0", fallback-names = ["libfoo2"] }
+//!
 //! # Feature versions
 //! `-sys` crates willing to support various versions of their underlying system libraries
 //! can use features to control the version of the dependency required.
@@ -682,24 +700,33 @@ impl Config {
                 }
             }
 
-            let (version, lib_name, optional) = {
-                // Pick the highest feature enabled version
-                if !enabled_feature_overrides.is_empty() {
-                    enabled_feature_overrides.sort_by(|a, b| {
-                        version_compare::compare(&a.version, &b.version)
-                            .expect("failed to compare versions")
-                            .ord()
-                            .expect("invalid version")
-                    });
-                    let highest = enabled_feature_overrides.into_iter().last().unwrap();
-                    (
-                        Some(&highest.version),
-                        highest.name.clone().unwrap_or_else(|| dep.lib_name()),
-                        highest.optional.unwrap_or(dep.optional),
-                    )
-                } else {
-                    (dep.version.as_ref(), dep.lib_name(), dep.optional)
-                }
+            // Pick the highest feature enabled version
+            let version;
+            let lib_name;
+            let fallback_lib_names;
+            let optional;
+            if enabled_feature_overrides.is_empty() {
+                version = dep.version.as_deref();
+                lib_name = dep.lib_name();
+                fallback_lib_names = dep.fallback_names.as_deref().unwrap_or(&[]);
+                optional = dep.optional;
+            } else {
+                enabled_feature_overrides.sort_by(|a, b| {
+                    version_compare::compare(&a.version, &b.version)
+                        .expect("failed to compare versions")
+                        .ord()
+                        .expect("invalid version")
+                });
+                let highest = enabled_feature_overrides.into_iter().last().unwrap();
+
+                version = Some(highest.version.as_str());
+                lib_name = highest.name.as_deref().unwrap_or(dep.lib_name());
+                fallback_lib_names = highest
+                    .fallback_names
+                    .as_deref()
+                    .or(dep.fallback_names.as_deref())
+                    .unwrap_or(&[]);
+                optional = highest.optional.unwrap_or(dep.optional);
             };
 
             let version = version.ok_or_else(|| {
@@ -718,16 +745,16 @@ impl Config {
             let mut library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables(name)
             } else if build_internal == BuildInternal::Always {
-                self.call_build_internal(&lib_name, version)?
+                self.call_build_internal(lib_name, version)?
             } else {
-                match pkg_config::Config::new()
+                let mut config = pkg_config::Config::new();
+                config
                     .atleast_version(version)
                     .print_system_libs(false)
                     .cargo_metadata(false)
-                    .statik(statik)
-                    .probe(&lib_name)
-                {
-                    Ok(lib) => Library::from_pkg_config(&lib_name, lib),
+                    .statik(statik);
+                match Self::probe_with_fallback(config, lib_name, fallback_lib_names) {
+                    Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
                     Err(e) => {
                         if build_internal == BuildInternal::Auto {
                             // Try building the lib internally as a fallback
@@ -747,6 +774,23 @@ impl Config {
             libraries.add(name, library);
         }
         Ok(libraries)
+    }
+
+    fn probe_with_fallback<'a>(
+        config: pkg_config::Config,
+        name: &'a str,
+        fallback_names: &'a [String],
+    ) -> Result<(&'a str, pkg_config::Library), pkg_config::Error> {
+        let error = match config.probe(name) {
+            Ok(x) => return Ok((name, x)),
+            Err(e) => e,
+        };
+        for name in fallback_names {
+            if let Ok(library) = config.probe(name) {
+                return Ok((name, library));
+            }
+        }
+        Err(error)
     }
 
     fn get_build_internal_env_var(&self, var: EnvVariable) -> Result<Option<BuildInternal>, Error> {

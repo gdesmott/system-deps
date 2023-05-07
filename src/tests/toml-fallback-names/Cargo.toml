@@ -1,0 +1,4 @@
+[package.metadata.system-deps.test_lib]
+version = "1.0"
+name = "nosuchlib"
+fallback-names = ["also-no-such-lib", "testlib", "should-not-get-here"]
