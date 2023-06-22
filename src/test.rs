@@ -1031,6 +1031,53 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
 }
 
 #[test]
+fn override_static_no_pkg_config() {
+    let (libraries, flags) = toml(
+        "toml-static",
+        vec![
+            ("SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG", "1"),
+            ("SYSTEM_DEPS_TESTSTATICLIB_LIB", "custom-lib"),
+            ("SYSTEM_DEPS_TESTSTATICLIB_LINK", "static"),
+        ],
+    )
+    .unwrap();
+    let testlib = libraries.get_by_name("teststaticlib").unwrap();
+    assert_eq!(testlib.link_paths, Vec::<PathBuf>::new());
+    assert_eq!(testlib.statik, true);
+    assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
+    assert_eq!(
+        testlib.libs,
+        vec![InternalLib::new("custom-lib".to_string(), true)]
+    );
+    assert_eq!(testlib.frameworks, Vec::<String>::new());
+    assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
+
+    assert_flags(
+        flags,
+        r"cargo:rustc-link-lib=static=custom-lib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+",
+    );
+}
+
+#[test]
 fn static_all_libs() {
     let (libraries, flags) = toml("toml-static", vec![("SYSTEM_DEPS_LINK", "static")]).unwrap();
 

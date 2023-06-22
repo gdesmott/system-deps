@@ -383,9 +383,18 @@ impl Dependencies {
                 lib.framework_paths = split_paths(&value);
             }
             if let Some(value) = env.get(&EnvVariable::new_lib(name)) {
+                let should_be_linked_statically = env
+                    .has_value(&EnvVariable::new_link(Some(name)), "static")
+                    || env.has_value(&EnvVariable::new_link(None), "static");
+
+                // If somebody manually mandates static linking, that is a
+                // clear intent. Let's just assume that a static lib is
+                // available and let the linking fail if the user is wrong.
+                let is_static_lib_available = should_be_linked_statically;
+
                 lib.libs = split_string(&value)
                     .into_iter()
-                    .map(|l| InternalLib::new(l, false))
+                    .map(|l| InternalLib::new(l, is_static_lib_available))
                     .collect();
             }
             if let Some(value) = env.get(&EnvVariable::new_lib_framework(name)) {
