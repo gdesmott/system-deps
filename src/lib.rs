@@ -1008,10 +1008,19 @@ impl Library {
         };
 
         let is_static_available = |name: &String| -> bool {
-            let libname = format!("lib{}.a", name);
+            let libnames = {
+                let mut names = vec![format!("lib{}.a", name)];
+
+                if cfg!(target_os = "windows") {
+                    names.push(format!("{}.lib", name));
+                }
+
+                names
+            };
 
             l.link_paths.iter().any(|dir| {
-                !system_roots.iter().any(|sys| dir.starts_with(sys)) && dir.join(&libname).exists()
+                let library_exists = libnames.iter().any(|libname| dir.join(libname).exists());
+                library_exists && !system_roots.iter().any(|sys| dir.starts_with(sys))
             })
         };
 
