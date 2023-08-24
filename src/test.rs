@@ -1043,7 +1043,7 @@ fn override_static_no_pkg_config() {
     .unwrap();
     let testlib = libraries.get_by_name("teststaticlib").unwrap();
     assert_eq!(testlib.link_paths, Vec::<PathBuf>::new());
-    assert_eq!(testlib.statik, true);
+    assert!(testlib.statik);
     assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
     assert_eq!(
         testlib.libs,
