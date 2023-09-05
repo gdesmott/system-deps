@@ -11,7 +11,7 @@ documentation = "https://docs.rs/system-deps/"
 readme = "README.md"
 
 [dependencies]
-pkg-config = "0.3"
+pkg-config = "0.3.23"
 toml = { version = "0.7", default-features = false, features = ["parse"] }
 version-compare = "0.1"
 heck = "0.4"
