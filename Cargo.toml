@@ -15,7 +15,7 @@ pkg-config = "0.3.23"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 version-compare = "0.1"
 heck = "0.4"
-cfg-expr = { version = "0.15", features = ["targets"] }
+cfg-expr = { version = "0.15.5", features = ["targets"] }
 
 [dev-dependencies]
 lazy_static = "1"
