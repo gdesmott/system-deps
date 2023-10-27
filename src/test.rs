@@ -110,6 +110,38 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
     );
 }
 
+#[test]
+fn version_range() {
+    let (libraries, _flags) = toml("toml-version-range", vec![]).unwrap();
+    let testlib = libraries.get_by_name("testlib").unwrap();
+    assert_eq!(testlib.version, "1.2.3");
+    assert_eq!(
+        testlib.defines.get("BADGER").unwrap().as_deref(),
+        Some("yes")
+    );
+    assert!(testlib.defines.get("AWESOME").unwrap().is_none());
+
+    let testdata = libraries.get_by_name("testdata").unwrap();
+    assert_eq!(testdata.version, "4.5.6");
+
+    assert_eq!(libraries.iter().len(), 2);
+}
+
+#[test]
+fn version_range_unsatisfied() {
+    let err = toml_err("toml-version-range-unsatisfied");
+
+    assert_matches!(err, Error::PkgConfig(_));
+
+    let err_msg = err.to_string();
+    // pkgconf and pkg-config give different error messages
+    if !err_msg.contains("Package 'testlib' has version '1.2.3', required version is '< 1.2'")
+        && !err_msg.contains("Requested 'testlib < 1.2' but version of Test Library is 1.2.3")
+    {
+        panic!("Error not as expected: {:?}", err);
+    }
+}
+
 fn toml_err(path: &str) -> Error {
     toml(path, vec![]).unwrap_err()
 }

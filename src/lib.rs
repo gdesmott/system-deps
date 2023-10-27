@@ -28,6 +28,18 @@
 //! }
 //! ```
 //!
+//! # Version format
+//!
+//! Versions can be expressed in the following formats
+//!
+//!   * "1.2" or ">= 1.2": At least version 1.2
+//!   * ">= 1.2, < 2.0": At least version 1.2 but less than version 2.0
+//!
+//! In the future more complicated version expressions might be supported.
+//!
+//! Note that these versions are not interpreted according to the semver rules, but based on the
+//! rules defined by pkg-config.
+//!
 //! # Feature-specific dependency
 //! You can easily declare an optional system dependency by associating it with a feature:
 //!
@@ -159,8 +171,8 @@
 //! fn main() {
 //!     system_deps::Config::new()
 //!         .add_build_internal("testlib", |lib, version| {
-//!             // Actually build the library here
-//!             system_deps::Library::from_internal_pkg_config("build/path-to-pc-file", lib, version)
+//!             // Actually build the library here that fulfills the passed in version requirements
+//!             system_deps::Library::from_internal_pkg_config("build/path-to-pc-file", lib, "1.2.4")
 //!          })
 //!         .probe()
 //!         .unwrap();
@@ -195,6 +207,7 @@ use heck::{ToShoutySnakeCase, ToSnakeCase};
 use std::collections::HashMap;
 use std::env;
 use std::fmt;
+use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -721,7 +734,18 @@ impl Config {
                 optional = dep.optional;
             } else {
                 enabled_feature_overrides.sort_by(|a, b| {
-                    version_compare::compare(&a.version, &b.version)
+                    fn min_version(r: metadata::VersionRange) -> &str {
+                        match r.start_bound() {
+                            std::ops::Bound::Unbounded => unreachable!(),
+                            std::ops::Bound::Excluded(_) => unreachable!(),
+                            std::ops::Bound::Included(b) => b,
+                        }
+                    }
+
+                    let a = min_version(metadata::parse_version(&a.version));
+                    let b = min_version(metadata::parse_version(&b.version));
+
+                    version_compare::compare(a, b)
                         .expect("failed to compare versions")
                         .ord()
                         .expect("invalid version")
@@ -758,10 +782,11 @@ impl Config {
             } else {
                 let mut config = pkg_config::Config::new();
                 config
-                    .atleast_version(version)
                     .print_system_libs(false)
                     .cargo_metadata(false)
+                    .range_version(metadata::parse_version(version))
                     .statik(statik);
+
                 match Self::probe_with_fallback(config, lib_name, fallback_lib_names) {
                     Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
                     Err(e) => {
@@ -826,23 +851,55 @@ impl Config {
         }
     }
 
-    fn call_build_internal(&mut self, name: &str, version: &str) -> Result<Library, Error> {
+    fn call_build_internal(&mut self, name: &str, version_str: &str) -> Result<Library, Error> {
         let lib = match self.build_internals.remove(name) {
-            Some(f) => {
-                f(name, version).map_err(|e| Error::BuildInternalClosureError(name.into(), e))?
+            Some(f) => f(name, version_str)
+                .map_err(|e| Error::BuildInternalClosureError(name.into(), e))?,
+            None => {
+                return Err(Error::BuildInternalNoClosure(
+                    name.into(),
+                    version_str.into(),
+                ))
             }
-            None => return Err(Error::BuildInternalNoClosure(name.into(), version.into())),
         };
 
         // Check that the lib built internally matches the required version
-        match version_compare::compare(&lib.version, version) {
-            Ok(version_compare::Cmp::Lt) => Err(Error::BuildInternalWrongVersion(
+        let version = metadata::parse_version(version_str);
+        fn min_version(r: metadata::VersionRange) -> &str {
+            match r.start_bound() {
+                std::ops::Bound::Unbounded => unreachable!(),
+                std::ops::Bound::Excluded(_) => unreachable!(),
+                std::ops::Bound::Included(b) => b,
+            }
+        }
+        fn max_version(r: metadata::VersionRange) -> Option<&str> {
+            match r.end_bound() {
+                std::ops::Bound::Included(_) => unreachable!(),
+                std::ops::Bound::Unbounded => None,
+                std::ops::Bound::Excluded(b) => Some(*b),
+            }
+        }
+
+        let min = min_version(version.clone());
+        if version_compare::compare(&lib.version, min) == Ok(version_compare::Cmp::Lt) {
+            return Err(Error::BuildInternalWrongVersion(
                 name.into(),
                 lib.version,
-                version.into(),
-            )),
-            _ => Ok(lib),
+                version_str.into(),
+            ));
         }
+
+        if let Some(max) = max_version(version) {
+            if version_compare::compare(&lib.version, max) == Ok(version_compare::Cmp::Ge) {
+                return Err(Error::BuildInternalWrongVersion(
+                    name.into(),
+                    lib.version,
+                    version_str.into(),
+                ));
+            }
+        }
+
+        Ok(lib)
     }
 
     fn has_feature(&self, feature: &str) -> bool {
@@ -1008,9 +1065,9 @@ impl Library {
     /// ```
     /// let mut config = system_deps::Config::new();
     /// config.add_build_internal("mylib", |lib, version| {
-    ///   // Actually build the library here
+    ///   // Actually build the library here that fulfills the passed in version requirements
     ///   system_deps::Library::from_internal_pkg_config("build-dir",
-    ///       lib, version)
+    ///       lib, "1.2.4")
     /// });
     /// ```
     pub fn from_internal_pkg_config<P>(

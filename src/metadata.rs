@@ -242,6 +242,14 @@ impl MetaData {
         match value {
             // somelib = "1.0"
             toml::Value::String(ref s) => {
+                if !validate_version(s) {
+                    return Err(MetadataError::UnexpectedVersionSetting(
+                        key.into(),
+                        name.into(),
+                        value.type_str().to_owned(),
+                    ));
+                }
+
                 dep.version = Some(s.clone());
             }
             toml::Value::Table(ref t) => {
@@ -267,6 +275,14 @@ impl MetaData {
                     dep.feature = Some(s.clone());
                 }
                 ("version", toml::Value::String(s)) => {
+                    if !validate_version(s) {
+                        return Err(MetadataError::UnexpectedVersionSetting(
+                            format!("{}.{}", p_key, name),
+                            key.into(),
+                            value.type_str().to_owned(),
+                        ));
+                    }
+
                     dep.version = Some(s.clone());
                 }
                 ("name", toml::Value::String(s)) => {
@@ -287,6 +303,14 @@ impl MetaData {
                     for (k, v) in version_settings {
                         match (k.as_str(), v) {
                             ("version", toml::Value::String(feat_vers)) => {
+                                if !validate_version(feat_vers) {
+                                    return Err(MetadataError::UnexpectedVersionSetting(
+                                        format!("{}.{}", p_key, name),
+                                        k.into(),
+                                        v.type_str().to_owned(),
+                                    ));
+                                }
+
                                 builder.version = Some(feat_vers.into());
                             }
                             ("name", toml::Value::String(feat_name)) => {
@@ -334,6 +358,53 @@ impl MetaData {
                     .ok_or_else(|| MetadataError::NotString(format!("{}[{}]", key, i)))
             })
             .collect()
+    }
+}
+
+fn validate_version(version: &str) -> bool {
+    if let Some((min, max)) = version.split_once(',') {
+        if !min.trim_start().starts_with(">=") || !max.trim_start().starts_with('<') {
+            return false;
+        }
+
+        true
+    } else {
+        true
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum VersionRange<'a> {
+    Range(std::ops::Range<&'a str>),
+    RangeFrom(std::ops::RangeFrom<&'a str>),
+}
+
+impl<'a> std::ops::RangeBounds<&'a str> for VersionRange<'a> {
+    fn start_bound(&self) -> std::ops::Bound<&&'a str> {
+        match self {
+            VersionRange::Range(r) => r.start_bound(),
+            VersionRange::RangeFrom(r) => r.start_bound(),
+        }
+    }
+
+    fn end_bound(&self) -> std::ops::Bound<&&'a str> {
+        match self {
+            VersionRange::Range(r) => r.end_bound(),
+            VersionRange::RangeFrom(r) => r.end_bound(),
+        }
+    }
+}
+
+pub(crate) fn parse_version(version: &str) -> VersionRange {
+    if let Some((min, max)) = version.split_once(',') {
+        // Format checked when parsing
+        let min = min.trim_start().strip_prefix(">=").unwrap().trim();
+        let max = max.trim_start().strip_prefix('<').unwrap().trim();
+        VersionRange::Range(min..max)
+    } else if let Some(min) = version.trim_start().strip_prefix(">=") {
+        VersionRange::RangeFrom(min..)
+    } else {
+        VersionRange::RangeFrom(version..)
     }
 }
 
