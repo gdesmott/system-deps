@@ -82,29 +82,3 @@ jobs:
         with:
           command: clippy
           args: -- -D warnings
-
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly
-          override: true
-          components: llvm-tools-preview
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: --all-features --no-fail-fast
-        env:
-          RUSTFLAGS: "-Zinstrument-coverage"
-          LLVM_PROFILE_FILE: "hawkbitrs-%p-%m.profraw"
-      - name: Install grcov
-        run: if [[ ! -e ~/.cargo/bin/grcov ]]; then cargo install grcov; fi
-      - name: Run grcov
-        run: grcov . --binary-path ./target/debug/ -s . -t lcov --branch --ignore-not-existing --ignore "hawkbit/examples/*" --ignore "*target*" -o coverage.lcov
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v1
-        with:
-          files: ./coverage.lcov
