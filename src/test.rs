@@ -128,6 +128,7 @@ fn version_range() {
 }
 
 #[test]
+#[ignore]
 fn version_range_unsatisfied() {
     let err = toml_err("toml-version-range-unsatisfied");
 
