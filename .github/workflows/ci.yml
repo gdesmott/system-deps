@@ -68,7 +68,7 @@ jobs:
           args: --all -- --check
 
   clippy:
-    name: Clippy
+    name: ClippyX
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
