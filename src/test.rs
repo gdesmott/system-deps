@@ -172,6 +172,7 @@ fn toml_pkg_config_err_version(
                 output: _,
                 name: _,
             } => {
+                dbg!(&cmd);
                 let s = format!(">= {}\"", expected_version);
                 assert!(cmd.ends_with(&s));
             }
