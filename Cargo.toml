@@ -13,11 +13,11 @@ readme = "README.md"
 [dependencies]
 pkg-config = "0.3.23"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
-version-compare = "0.1"
-heck = "0.4"
+version-compare = "0.2"
+heck = "0.5"
 cfg-expr = { version = "0.15.5", features = ["targets"] }
 
 [dev-dependencies]
 lazy_static = "1"
-itertools = "0.11"
+itertools = "0.12"
 assert_matches = "1.5"
