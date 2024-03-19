@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.2.2](https://github.com/gdesmott/system-deps/compare/v6.2.1...v6.2.2) - 2024-03-19
+
+### Other
+- Update to heck 0.5, version-compare 0.2 and itertools 0.12
+
 ## [6.2.1](https://github.com/gdesmott/system-deps/compare/v6.2.0...v6.2.1) - 2024-03-14
 
 ### Other
