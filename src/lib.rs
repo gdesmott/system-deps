@@ -370,6 +370,18 @@ impl Dependencies {
         self.aggregate_path_buf(|l| &l.include_paths)
     }
 
+    /// Returns a vector of [Library::linker_args] of each library, removing duplicates.
+    pub fn all_linker_args(&self) -> Vec<&Vec<String>> {
+        let mut v = self
+            .libs
+            .values()
+            .flat_map(|l| &l.ld_args)
+            .collect::<Vec<_>>();
+        v.sort_unstable();
+        v.dedup();
+        v
+    }
+
     /// Returns a vector of [Library::defines] of each library, removing duplicates.
     pub fn all_defines(&self) -> Vec<(&str, &Option<String>)> {
         let mut v = self
@@ -416,6 +428,12 @@ impl Dependencies {
             if let Some(value) = env.get(&EnvVariable::new_include(name)) {
                 lib.include_paths = split_paths(&value);
             }
+            if let Some(value) = env.get(&EnvVariable::new_linker_args(name)) {
+                lib.ld_args = split_string(&value)
+                    .into_iter()
+                    .map(|l| l.split(',').map(|l| l.to_string()).collect())
+                    .collect();
+            }
         }
     }
 
@@ -448,6 +466,9 @@ impl Dependencies {
             lib.frameworks
                 .iter()
                 .for_each(|f| flags.add(BuildFlag::LibFramework(f.clone())));
+            lib.ld_args
+                .iter()
+                .for_each(|f| flags.add(BuildFlag::LinkArg(f.clone())))
         }
 
         // Export DEP_$CRATE_INCLUDE env variable with the headers paths,
@@ -528,6 +549,7 @@ enum EnvVariable {
     NoPkgConfig(String),
     BuildInternal(Option<String>),
     Link(Option<String>),
+    LinkerArgs(String),
 }
 
 impl EnvVariable {
@@ -549,6 +571,10 @@ impl EnvVariable {
 
     fn new_include(lib: &str) -> Self {
         Self::Include(lib.to_string())
+    }
+
+    fn new_linker_args(lib: &str) -> Self {
+        Self::LinkerArgs(lib.to_string())
     }
 
     fn new_no_pkg_config(lib: &str) -> Self {
@@ -573,6 +599,7 @@ impl EnvVariable {
             EnvVariable::NoPkgConfig(_) => "NO_PKG_CONFIG",
             EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
             EnvVariable::Link(_) => "LINK",
+            EnvVariable::LinkerArgs(_) => "LDFLAGS",
         }
     }
 
@@ -586,6 +613,7 @@ impl EnvVariable {
         add_to_flags(flags, EnvVariable::new_search_native(name));
         add_to_flags(flags, EnvVariable::new_search_framework(name));
         add_to_flags(flags, EnvVariable::new_include(name));
+        add_to_flags(flags, EnvVariable::new_linker_args(name));
         add_to_flags(flags, EnvVariable::new_no_pkg_config(name));
         add_to_flags(flags, EnvVariable::new_build_internal(Some(name)));
         add_to_flags(flags, EnvVariable::new_link(Some(name)));
@@ -600,6 +628,7 @@ impl fmt::Display for EnvVariable {
             | EnvVariable::SearchNative(lib)
             | EnvVariable::SearchFramework(lib)
             | EnvVariable::Include(lib)
+            | EnvVariable::LinkerArgs(lib)
             | EnvVariable::NoPkgConfig(lib)
             | EnvVariable::BuildInternal(Some(lib))
             | EnvVariable::Link(Some(lib)) => {
@@ -978,6 +1007,8 @@ pub struct Library {
     pub framework_paths: Vec<PathBuf>,
     /// directories where the compiler should look for header files
     pub include_paths: Vec<PathBuf>,
+    /// flags that should be passed to the linker
+    pub ld_args: Vec<Vec<String>>,
     /// macros that should be defined by the compiler
     pub defines: HashMap<String, Option<String>>,
     /// library version
@@ -1034,6 +1065,7 @@ impl Library {
                 .collect(),
             link_paths: l.link_paths,
             include_paths: l.include_paths,
+            ld_args: l.ld_args,
             frameworks: l.frameworks,
             framework_paths: l.framework_paths,
             defines: l.defines,
@@ -1049,6 +1081,7 @@ impl Library {
             libs: Vec::new(),
             link_paths: Vec::new(),
             include_paths: Vec::new(),
+            ld_args: Vec::new(),
             frameworks: Vec::new(),
             framework_paths: Vec::new(),
             defines: HashMap::new(),
@@ -1168,6 +1201,7 @@ enum BuildFlag {
     Lib(String, bool), // true if static
     LibFramework(String),
     RerunIfEnvChanged(EnvVariable),
+    LinkArg(Vec<String>),
 }
 
 impl fmt::Display for BuildFlag {
@@ -1185,6 +1219,9 @@ impl fmt::Display for BuildFlag {
             }
             BuildFlag::LibFramework(lib) => write!(f, "rustc-link-lib=framework={}", lib),
             BuildFlag::RerunIfEnvChanged(env) => write!(f, "rerun-if-env-changed={}", env),
+            BuildFlag::LinkArg(ld_option) => {
+                write!(f, "rustc-link-arg=-Wl,{}", ld_option.join(","))
+            }
         }
     }
 }
