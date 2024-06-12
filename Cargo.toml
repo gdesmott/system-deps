@@ -1,11 +1,20 @@
 [package]
 name = "system-deps"
 version = "6.2.2"
-authors = ["Guillaume Desmottes <guillaume.desmottes@collabora.com>", "Josh Triplett <josh@joshtriplett.org>"]
+authors = [
+    "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
+    "Josh Triplett <josh@joshtriplett.org>",
+]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gdesmott/system-deps"
 description = "Discover and configure system dependencies from declarative dependencies in Cargo.toml"
-keywords = ["pkg-config", "build-dependencies", "build-depends", "manifest", "metadata"]
+keywords = [
+    "pkg-config",
+    "build-dependencies",
+    "build-depends",
+    "manifest",
+    "metadata",
+]
 edition = "2018"
 documentation = "https://docs.rs/system-deps/"
 readme = "README.md"
