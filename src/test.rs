@@ -60,7 +60,7 @@ fn toml(
 fn assert_flags(flags: BuildFlags, expected: &str) {
     // flags ordering isn't guaranteed so sort them out before comparing
     let flags = flags.to_string().split('\n').sorted().join("\n");
-    let expected = expected.to_string().split('\n').sorted().join("\n");
+    let expected = expected.split('\n').sorted().join("\n");
     assert_eq!(flags, expected);
 }
 
