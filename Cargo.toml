@@ -19,5 +19,5 @@ cfg-expr = { version = "0.15.5", features = ["targets"] }
 
 [dev-dependencies]
 lazy_static = "1"
-itertools = "0.12"
+itertools = "0.13"
 assert_matches = "1.5"
