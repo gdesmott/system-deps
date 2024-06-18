@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.1](https://github.com/gdesmott/system-deps/compare/v7.0.0...v7.0.1) - 2024-06-18
+
+### Other
+- bump minimal pkg-config version to 0.3.25
+
 ## [7.0.0](https://github.com/gdesmott/system-deps/compare/v6.2.2...v7.0.0) - 2024-06-17
 
 ### Fixed
