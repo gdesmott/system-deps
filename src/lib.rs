@@ -696,6 +696,7 @@ impl Config {
     /// # Arguments
     /// * `name`: the name of the library, as defined in `Cargo.toml`
     /// * `func`: closure called when internally building the library.
+    ///
     /// It receives as argument the library name, and the minimum version required.
     pub fn add_build_internal<F>(self, name: &str, func: F) -> Self
     where
