@@ -1,6 +1,6 @@
 [package]
 name = "system-deps"
-version = "7.0.1"
+version = "7.0.2"
 authors = [
     "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
     "Josh Triplett <josh@joshtriplett.org>",
