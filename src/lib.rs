@@ -735,6 +735,8 @@ impl Config {
         let mut path = PathBuf::from(dir);
         path.push("Cargo.toml");
 
+        println!("cargo:rerun-if-changed={}", &path.to_string_lossy());
+
         let metadata = MetaData::from_file(&path)?;
 
         let mut libraries = Dependencies::default();
