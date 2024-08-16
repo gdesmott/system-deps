@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.2](https://github.com/gdesmott/system-deps/compare/v7.0.1...v7.0.2) - 2024-08-16
+
+### Fixed
+- fix new clippy warning
+
+### Other
+- Add `cargo:rerun-if-changed=Cargo.toml` to config probe
+- Fix some errors in docs
+- update to cfg-expr 0.16
+
 ## [7.0.1](https://github.com/gdesmott/system-deps/compare/v7.0.0...v7.0.1) - 2024-06-18
 
 ### Other
