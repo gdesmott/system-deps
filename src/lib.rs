@@ -5,6 +5,7 @@
 //! declarative, so other tools can read them as well.
 //!
 //! # Usage
+//!
 //! In your `Cargo.toml`:
 //!
 //! ```toml
@@ -78,6 +79,7 @@
 //! ```
 //!
 //! # Fallback library names
+//!
 //! Some libraries may be available under different names on different platforms or distributions.
 //! To allow for this, you can define fallback names to search for if the main library name does not work.
 //!
@@ -88,13 +90,16 @@
 //!
 //! You may also specify different fallback names for different versions:
 //!
+//! ```toml
 //! [package.metadata.system-deps.libfoo]
 //! version = "0.1"
 //! fallback-names = ["libfoo-0.1"]
 //! v1 = { version = "1.0", fallback-names = ["libfoo1"] }
 //! v2 = { version = "2.0", fallback-names = ["libfoo2"] }
+//! ```
 //!
 //! # Feature versions
+//!
 //! `-sys` crates willing to support various versions of their underlying system libraries
 //! can use features to control the version of the dependency required.
 //! `system-deps` will pick the highest version among enabled features.
@@ -149,8 +154,10 @@
 //! - `unix` and `windows`
 //!
 //! # Overriding build flags
+//!
 //! By default `system-deps` automatically defines the required build flags for each dependency using the information fetched from `pkg-config`.
 //! These flags can be overridden using environment variables if needed:
+//!
 //! - `SYSTEM_DEPS_$NAME_SEARCH_NATIVE` to override the [`cargo:rustc-link-search=native`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorustc-link-searchkindpath) flag;
 //! - `SYSTEM_DEPS_$NAME_SEARCH_FRAMEWORK` to override the [`cargo:rustc-link-search=framework`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorustc-link-searchkindpath) flag;
 //! - `SYSTEM_DEPS_$NAME_LIB` to override the [`cargo:rustc-link-lib`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-lib) flag;
@@ -167,6 +174,7 @@
 //!
 //! `-sys` crates can provide support for building and statically link their underlying system library as part of their build process.
 //! Here is how to do this in your `build.rs`:
+//!
 //! ```should_panic
 //! fn main() {
 //!     system_deps::Config::new()
@@ -181,6 +189,7 @@
 //!
 //! This feature can be controlled using the `SYSTEM_DEPS_$NAME_BUILD_INTERNAL` environment variable
 //! which can have the following values:
+//!
 //! - `auto`: build the dependency only if the required version has not been found by `pkg-config`;
 //! - `always`: always build the dependency, ignoring any version which may be installed on the system;
 //! - `never`: (default) never build the dependency, `system-deps` will fail if the required version is not found on the system.
@@ -370,7 +379,7 @@ impl Dependencies {
         self.aggregate_path_buf(|l| &l.include_paths)
     }
 
-    /// Returns a vector of [Library::linker_args] of each library, removing duplicates.
+    /// Returns a vector of [Library::ld_args] of each library, removing duplicates.
     pub fn all_linker_args(&self) -> Vec<&Vec<String>> {
         let mut v = self
             .libs

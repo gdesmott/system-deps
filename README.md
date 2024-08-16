@@ -27,8 +27,7 @@ In your `Cargo.toml`:
 system-deps = "2.0"
 ```
 
-Then, to declare a dependency on `testlib >= 1.2`
-add the following section:
+Then, to declare a dependency on `testlib >= 1.2` add the following section:
 
 ```toml
 [package.metadata.system-deps]
