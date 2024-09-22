@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.3](https://github.com/gdesmott/system-deps/compare/v7.0.2...v7.0.3) - 2024-09-22
+
+### Other
+
+- Update cfg-expr to 0.17
+
 ## [7.0.2](https://github.com/gdesmott/system-deps/compare/v7.0.1...v7.0.2) - 2024-08-16
 
 ### Fixed
