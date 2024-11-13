@@ -25,14 +25,15 @@ toml = { version = "0.8", default-features = false, features = ["parse"] }
 version-compare = "0.2"
 heck = "0.5"
 cfg-expr = { version = "0.17", features = ["targets"] }
+system-deps-binary = { path = "./binary", optional = true }
 
 [dev-dependencies]
 lazy_static = "1"
 itertools = "0.13"
 assert_matches = "1.5"
 
-[build-dependencies]
-system-deps-meta = { path = "./meta", optional = true }
-
 [features]
-build_meta = [ "dep:system-deps-meta" ]
+binary = [ "dep:system-deps-binary" ]
+gx = [ "system-deps-binary/gz" ]
+xz = [ "system-deps-binary/xz" ]
+zip = [ "system-deps-binary/zip" ]
