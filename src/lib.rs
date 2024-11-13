@@ -748,6 +748,7 @@ type FnBuildInternal =
 pub struct Config {
     env: EnvVariables,
     build_internals: HashMap<String, Box<FnBuildInternal>>,
+    external_pkg_config_libs: Vec<String>,
 }
 
 impl Default for Config {
@@ -766,7 +767,28 @@ impl Config {
         Self {
             env,
             build_internals: HashMap::new(),
+            external_pkg_config_libs: Vec::new(),
         }
+    }
+
+    /// Search and link more libraries than the ones specified in the Cargo.toml.
+    ///
+    /// Any library name that pkg-config accepts is valid, for example "name" or "name >= 1.0".
+    /// These are considered optional and will not stop the build, they will emit a warning if
+    /// they can't be found.
+    ///
+    /// When using the `binary` feature, they will use the same `PKG_CONFIG_PATH` overrides from
+    /// the downloaded binaries as the parent libraries.
+    ///
+    /// # Arguments
+    /// * `libs`: a list of libraries to link.
+    pub fn add_pkg_config_libraries<T: AsRef<str>>(
+        mut self,
+        libs: impl Iterator<Item = T>,
+    ) -> Self {
+        self.external_pkg_config_libs
+            .extend(libs.map(|s| s.as_ref().into()));
+        self
     }
 
     /// Probe all libraries configured in the Cargo.toml
@@ -828,8 +850,8 @@ impl Config {
         println!("cargo:rerun-if-changed={}", &path.to_string_lossy());
 
         let metadata = MetaData::from_file(&path)?;
-
         let mut libraries = Dependencies::default();
+        let mut combined_pkg_config_path = vec![];
 
         for dep in metadata.deps.iter() {
             if let Some(cfg) = &dep.cfg {
@@ -909,6 +931,7 @@ impl Config {
                 system_deps_binary::get_path(""),
             ]
             .concat();
+            combined_pkg_config_path.extend_from_slice(&pkg_config_path);
 
             // should the lib be statically linked?
             let statik = self
@@ -952,6 +975,32 @@ impl Config {
 
             libraries.add(name, library);
         }
+
+        // Process libraries added to pkg-config using `Self::add_pkg_config_libraries`
+        for entry in &self.external_pkg_config_libs {
+            let mut config = pkg_config::Config::new();
+            config
+                .print_system_libs(false)
+                .cargo_metadata(false)
+                .statik(true);
+
+            let mut it = entry.trim().splitn(2, " ");
+            let name = it.next().unwrap();
+            if let Some(version) = it.next() {
+                config.range_version(metadata::parse_version(version));
+            }
+
+            match Library::wrap_pkg_config_dir(&combined_pkg_config_path, || config.probe(name)) {
+                Ok(lib) => {
+                    let mut lib = Library::from_pkg_config(name, lib);
+                    // TODO: Change to StaticLinking::Always
+                    lib.statik = true;
+                    libraries.add(name, lib)
+                }
+                Err(_) => println!("cargo:warning=Extra library `{}` is not available", entry),
+            };
+        }
+
         Ok(libraries)
     }
 
