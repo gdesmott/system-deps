@@ -30,3 +30,9 @@ cfg-expr = { version = "0.17", features = ["targets"] }
 lazy_static = "1"
 itertools = "0.13"
 assert_matches = "1.5"
+
+[build-dependencies]
+system-deps-meta = { path = "./meta", optional = true }
+
+[features]
+build_meta = [ "dep:system-deps-meta" ]
