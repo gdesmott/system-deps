@@ -202,6 +202,98 @@
 //! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
 //! Libraries can be statically linked by defining the environment variable `SYSTEM_DEPS_$NAME_LINK=static`.
 //! You can also use `SYSTEM_DEPS_LINK=static` to statically link all the libraries.
+//!
+//! # Programmatically add libraries
+//!
+//! Imagine that you have a base library that is already using system deps, and you have a set of optional plugins that you
+//! want to link into the resulting binary. While it would be possible to add them all as metadata entries in the crate's Cargo.toml,
+//! it doesn't scale very well and it doesn't allow to include user defined libraries.
+//!
+//! As an alternative, it is possible to use `Config::add_pkg_config_libraries` to specify a list of extra libraries to query from `pkg-config`.
+//! This is called in the build script where the library is being built, which allows to query the environment, read the metadata and
+//! configuration, and much more to decide what libraries to add.
+//!
+//! ```should_panic
+//! fn main() {
+//!     let mut config = system_deps::Config::new();
+//!     if let Ok(list) = std::env::var("PLUGIN_LIST") {
+//!         config = config.add_pkg_config_libraries(list.split(","));
+//!     }
+//!     config
+//!         .probe()
+//!         .unwrap();
+//! }
+//! ```
+//!
+//! The libraries specified with this option can have any form readable by `pkg-config`, and they will inherit the main libraries'
+//! binary paths if you are using them. If `pkg-config` can't find some entry, it will print a warning but the compilation won't fail.
+//!
+//! # Using prebuilt binaries
+//!
+//! Some system libraries may take too long to build or require a specific environment. `system-deps` allows to download and link against
+//! prebuilt library binaries specified in the crate metadata. To do so, you need to enable the `binary` feature and configure the library metadata.
+//!
+//! ```toml
+//! [package.metadata.system-deps.liba]
+//! name = "liba"
+//! version = "1.0"
+//! url = "https://download/liba-1.0.tar.gz"
+//! checksum = "..."
+//! pkg_paths = [ "lib/pkgconfig" ]
+//! ```
+//!
+//! The snippet above will attempt to download the archive specified in the `url` field, extract it and add the relative paths from `pkg_paths` to the
+//! `PKG_CONFIG_PATH` when looking for `liba`. This is done automatically and dependents of the library don't need to make any changes.
+//! It is recommended to have a feature in the crate's `Cargo.toml` that enables the `binary` feature in `system-deps`, instead of hard-coding it.
+//!
+//! ```toml
+//! [features]
+//! binary = [ "system-deps/binary", "system-deps/gz" ]
+//! ```
+//!
+//! As oppossed to the other metadata in `system-deps`, the metadata section can be specified anywhere in the crate tree, with entries from top level crates having priority.
+//! This allows for a crate to provide a default value for its binaries, and a dependent crate to add extra configuration.
+//!
+//! ```toml
+//! # Crate graph: user_project -> libb -> liba
+//!
+//! # libb/Cargo.toml
+//! [package.metadata.system-deps.liba]
+//! url = "https://download/custom-liba-1.0.tar.gz"
+//!
+//! # user_project/Cargo.toml
+//! [package.metadata.system-deps.liba]
+//! url = "file:///tmp/liba"
+//! ```
+//!
+//! In this example, `libb` overwrites the binaries provided by `liba` (for compatibility reasons, to add flags needed by `libb`, to use a single package for both...).
+//! However, the user project overwrites them again to point at a local file for development.
+//!
+//! The binaries can be configured per target (TODO: per version) like other `system-deps` options:
+//!
+//! ```toml
+//! [package.metadata.system-deps.liba.'cfg(target = "unix")']
+//! url = "https://download/liba-unix-1.0.tar.gz"
+//!
+//! [package.metadata.system-deps.liba.'cfg(target = "windows")']
+//! url = "https://download/liba-windows-1.0.zip"
+//! ```
+//!
+//! By default, a binary archive adds its paths to `PKG_CONFIG_PATH` only for the library it is defined for. However, sometimes you may want to share a single url
+//! for multiple libraries. While it is possible to repeat the url for every entry, a more concise approach is to use `follows` to copy the configuration from another library.
+//! If one binary is meant to be used everywhere, set the `global` (the ordering of multiple global binary sources is not guaranteed).
+//!
+//! ```toml
+//! [package.metadata.system-deps.libb]
+//! follows = "liba" # This name corresponds to the key of the metadata table
+//!
+//! [package.metadata.system-deps.libc]
+//! url = "file:///tmp/liba.tar.xz"
+//! global = true
+//! ```
+//!
+//! Additionally, the environment variables `SYSTEM_DEPS_BINARY_URL`, `SYSTEM_DEPS_BINARY_CHECKSUM` and `SYSTEM_DEPS_BINARY_PKG_PATHS` can be used to set a single
+//! global binary url (for example, for local testing).
 
 #![deny(missing_docs)]
 
@@ -707,17 +799,15 @@ impl Config {
     /// * `func`: closure called when internally building the library.
     ///
     /// It receives as argument the library name, and the minimum version required.
-    pub fn add_build_internal<F>(self, name: &str, func: F) -> Self
+    pub fn add_build_internal<F>(mut self, name: &str, func: F) -> Self
     where
         F: 'static + FnOnce(&str, &str) -> std::result::Result<Library, BuildInternalClosureError>,
     {
         let mut build_internals = self.build_internals;
         build_internals.insert(name.to_string(), Box::new(func));
 
-        Self {
-            env: self.env,
-            build_internals,
-        }
+        self.build_internals = build_internals;
+        self
     }
 
     fn probe_full(mut self) -> Result<Dependencies, Error> {
@@ -810,6 +900,16 @@ impl Config {
             let name = &dep.key;
             let build_internal = self.get_build_internal_status(name)?;
 
+            // Is there an overrided pkg-config path for the library?
+            #[cfg(not(feature = "binary"))]
+            let pkg_config_path: [&str; 0] = [];
+            #[cfg(feature = "binary")]
+            let pkg_config_path = [
+                system_deps_binary::get_path(name.as_str()),
+                system_deps_binary::get_path(""),
+            ]
+            .concat();
+
             // should the lib be statically linked?
             let statik = self
                 .env
@@ -828,7 +928,11 @@ impl Config {
                     .range_version(metadata::parse_version(version))
                     .statik(statik);
 
-                match Self::probe_with_fallback(config, lib_name, fallback_lib_names) {
+                let probe = Library::wrap_pkg_config_dir(&pkg_config_path, || {
+                    Self::probe_with_fallback(&config, lib_name, fallback_lib_names)
+                });
+
+                match probe {
                     Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
                     Err(e) => {
                         if build_internal == BuildInternal::Auto {
@@ -852,7 +956,7 @@ impl Config {
     }
 
     fn probe_with_fallback<'a>(
-        config: pkg_config::Config,
+        config: &'a pkg_config::Config,
         name: &'a str,
         fallback_names: &'a [String],
     ) -> Result<(&'a str, pkg_config::Library), pkg_config::Error> {
@@ -1102,6 +1206,35 @@ impl Library {
         }
     }
 
+    fn wrap_pkg_config_dir<P, F, R>(pkg_config_dir: &[P], f: F) -> Result<R, pkg_config::Error>
+    where
+        P: AsRef<std::ffi::OsStr>,
+        F: FnOnce() -> Result<R, pkg_config::Error>,
+    {
+        // Save current PKG_CONFIG_PATH, so we can restore it
+        let old = env::var("PKG_CONFIG_PATH");
+        let old_paths = old
+            .as_ref()
+            .map(env::split_paths)
+            .unwrap()
+            .collect::<Vec<_>>();
+
+        let paths = env::join_paths(
+            pkg_config_dir
+                .iter()
+                .map(|p| p.as_ref())
+                .chain(old_paths.iter().map(|p| p.as_os_str())),
+        )
+        .unwrap();
+        env::set_var("PKG_CONFIG_PATH", paths);
+
+        let res = f();
+
+        env::set_var("PKG_CONFIG_PATH", old.unwrap_or_else(|_| "".into()));
+
+        res
+    }
+
     /// Create a `Library` by probing `pkg-config` on an internal directory.
     /// This helper is meant to be used by `Config::add_build_internal` closures
     /// after having built the lib to return the library information to system-deps.
@@ -1132,36 +1265,18 @@ impl Library {
     where
         P: AsRef<Path>,
     {
-        // save current PKG_CONFIG_PATH, so we can restore it
-        let old = env::var("PKG_CONFIG_PATH");
+        let pkg_lib = Self::wrap_pkg_config_dir(&[pkg_config_dir.as_ref().as_os_str()], || {
+            pkg_config::Config::new()
+                .atleast_version(version)
+                .print_system_libs(false)
+                .cargo_metadata(false)
+                .statik(true)
+                .probe(lib)
+        })?;
 
-        match old {
-            Ok(ref s) => {
-                let mut paths = env::split_paths(s).collect::<Vec<_>>();
-                paths.push(PathBuf::from(pkg_config_dir.as_ref()));
-                let paths = env::join_paths(paths).unwrap();
-                env::set_var("PKG_CONFIG_PATH", paths)
-            }
-            Err(_) => env::set_var("PKG_CONFIG_PATH", pkg_config_dir.as_ref()),
-        }
-
-        let pkg_lib = pkg_config::Config::new()
-            .atleast_version(version)
-            .print_system_libs(false)
-            .cargo_metadata(false)
-            .statik(true)
-            .probe(lib);
-
-        env::set_var("PKG_CONFIG_PATH", old.unwrap_or_else(|_| "".into()));
-
-        match pkg_lib {
-            Ok(pkg_lib) => {
-                let mut lib = Self::from_pkg_config(lib, pkg_lib);
-                lib.statik = true;
-                Ok(lib)
-            }
-            Err(e) => Err(e.into()),
-        }
+        let mut lib = Self::from_pkg_config(lib, pkg_lib);
+        lib.statik = true;
+        Ok(lib)
     }
 }
 
