@@ -53,7 +53,7 @@ fn toml(
     env: Vec<(&'static str, &'static str)>,
 ) -> Result<(Dependencies, BuildFlags), Error> {
     let libs = create_config(path, env).probe_full()?;
-    let flags = libs.gen_flags()?;
+    let flags = libs.gen_flags(true)?;
     Ok((libs, flags))
 }
 
@@ -972,7 +972,10 @@ fn optional() {
 fn aggregate() {
     let (libraries, _) = toml("toml-two-libs", vec![]).unwrap();
 
-    assert_eq!(libraries.all_libs(), vec!["test", "test2"]);
+    assert_eq!(
+        libraries.all_libs(),
+        vec![("test", false), ("test2", false)]
+    );
     assert_eq!(
         libraries.all_link_paths(),
         vec![Path::new("/usr/lib"), Path::new("/usr/lib64")]
