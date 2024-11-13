@@ -197,6 +197,23 @@
 //! You can also use the `SYSTEM_DEPS_BUILD_INTERNAL` environment variable with the same values
 //! defining the behavior for all the dependencies which don't have `SYSTEM_DEPS_$NAME_BUILD_INTERNAL` defined.
 //!
+//! # Set variables from the build script
+//!
+//! Sometimes a library may want to configure `system-deps` directly instead of making the user set certain variables.
+//! To do so, use the `Config::add_env` method before calling `probe` in the build script.
+//! This allows to control the settings using crate features.
+//!
+//! ```should panic
+//! fn main() {
+//!     let mut config = system_deps::Config::new();
+//!     
+//!     #[cfg(feature = "static")]
+//!     config = config.add_env("SYSTEM_DEPS_LINK", "static".into())
+//!
+//!     config.probe().unwrap();
+//! }
+//! ```
+//!
 //! # Static linking
 //!
 //! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
@@ -675,6 +692,29 @@ impl Config {
             env,
             build_internals: HashMap::new(),
         }
+    }
+
+    /// Adds environment overrides to the configuration.
+    ///
+    /// The values shadow the set environment variables and any previous invocations of this
+    /// function with the same key. It doesn't modify the environment.
+    ///
+    /// # Arguments
+    /// * `key`: the name of the variable.
+    /// * `value`: the value of the variable.
+    pub fn add_env(mut self, key: &'static str, value: String) -> Self {
+        match self.env {
+            EnvVariables::Environment => {
+                self.env = EnvVariables::Mock {
+                    vars: HashMap::from([(key, value)]),
+                    fallback: true,
+                };
+            }
+            EnvVariables::Mock { ref mut vars, .. } => {
+                vars.insert(key, value);
+            }
+        }
+        self
     }
 
     /// Probe all libraries configured in the Cargo.toml
@@ -1168,8 +1208,10 @@ impl Library {
 #[derive(Debug)]
 enum EnvVariables {
     Environment,
-    #[cfg(test)]
-    Mock(HashMap<&'static str, String>),
+    Mock {
+        vars: HashMap<&'static str, String>,
+        fallback: bool,
+    },
 }
 
 trait EnvVariablesExt<T> {
@@ -1191,8 +1233,11 @@ impl EnvVariablesExt<&str> for EnvVariables {
     fn get(&self, var: &str) -> Option<String> {
         match self {
             EnvVariables::Environment => env::var(var).ok(),
-            #[cfg(test)]
-            EnvVariables::Mock(vars) => vars.get(var).cloned(),
+            EnvVariables::Mock { vars, fallback } => {
+                vars.get(var)
+                    .cloned()
+                    .or(if *fallback { env::var(var).ok() } else { None })
+            }
         }
     }
 }

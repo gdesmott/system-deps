@@ -45,7 +45,10 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
         hash.insert(k, v.to_string());
     });
 
-    Config::new_with_env(EnvVariables::Mock(hash))
+    Config::new_with_env(EnvVariables::Mock {
+        vars: hash,
+        fallback: false,
+    })
 }
 
 fn toml(
