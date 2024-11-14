@@ -2,7 +2,6 @@
 name = "system-deps-binary"
 version = "0.1.0"
 edition = "2021"
-links = "system-deps-binary"
 
 [build-dependencies]
 system-deps-meta = { path = "../meta" }

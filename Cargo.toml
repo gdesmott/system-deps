@@ -26,6 +26,7 @@ version-compare = "0.2"
 heck = "0.5"
 cfg-expr = { version = "0.17", features = ["targets"] }
 system-deps-binary = { path = "./binary", optional = true }
+cc = { version = "1.2", optional = true }
 
 [dev-dependencies]
 lazy_static = "1"
@@ -33,7 +34,8 @@ itertools = "0.13"
 assert_matches = "1.5"
 
 [features]
-binary = [ "dep:system-deps-binary" ]
+default = [ "binary" ]
+binary = [ "dep:system-deps-binary", "dep:cc" ]
 gx = [ "system-deps-binary/gz" ]
 xz = [ "system-deps-binary/xz" ]
 zip = [ "system-deps-binary/zip" ]

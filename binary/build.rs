@@ -115,7 +115,7 @@ fn paths() -> HashMap<String, Vec<PathBuf>> {
     let mut follow_list = HashMap::new();
 
     // Global overrides from environment
-    // TODO: This need to come first
+    // TODO: Change this so the env set global url always is first in the list of paths
     if let Some(url) = env("SYSTEM_DEPS_BINARY_URL") {
         let checksum = env("SYSTEM_DEPS_BINARY_CHECKSUM");
         let pkg_paths = env("SYSTEM_DEPS_BINARY_PKG_PATHS");

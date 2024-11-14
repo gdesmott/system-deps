@@ -203,28 +203,6 @@
 //! Libraries can be statically linked by defining the environment variable `SYSTEM_DEPS_$NAME_LINK=static`.
 //! You can also use `SYSTEM_DEPS_LINK=static` to statically link all the libraries.
 //!
-//! # Programmatically add libraries
-//!
-//! Imagine that you have a base library that is already using system deps, and you have a set of optional plugins that you
-//! want to link into the resulting binary. While it would be possible to add them all as metadata entries in the crate's Cargo.toml,
-//! it doesn't scale very well and it doesn't allow to include user defined libraries.
-//!
-//! As an alternative, it is possible to use `Config::add_pkg_config_libraries` to specify a list of extra libraries to query from `pkg-config`.
-//! This is called in the build script where the library is being built, which allows to query the environment, read the metadata and
-//! configuration, and much more to decide what libraries to add.
-//!
-//! ```should_panic
-//! fn main() {
-//!     let mut config = system_deps::Config::new();
-//!     if let Ok(list) = std::env::var("PLUGIN_LIST") {
-//!         config = config.add_pkg_config_libraries(list.split(","));
-//!     }
-//!     config
-//!         .probe()
-//!         .unwrap();
-//! }
-//! ```
-//!
 //! The libraries specified with this option can have any form readable by `pkg-config`, and they will inherit the main libraries'
 //! binary paths if you are using them. If `pkg-config` can't find some entry, it will print a warning but the compilation won't fail.
 //!
@@ -305,9 +283,12 @@ extern crate lazy_static;
 mod test;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::env;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
+use std::iter;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -748,7 +729,6 @@ type FnBuildInternal =
 pub struct Config {
     env: EnvVariables,
     build_internals: HashMap<String, Box<FnBuildInternal>>,
-    external_pkg_config_libs: Vec<String>,
 }
 
 impl Default for Config {
@@ -767,28 +747,7 @@ impl Config {
         Self {
             env,
             build_internals: HashMap::new(),
-            external_pkg_config_libs: Vec::new(),
         }
-    }
-
-    /// Search and link more libraries than the ones specified in the Cargo.toml.
-    ///
-    /// Any library name that pkg-config accepts is valid, for example "name" or "name >= 1.0".
-    /// These are considered optional and will not stop the build, they will emit a warning if
-    /// they can't be found.
-    ///
-    /// When using the `binary` feature, they will use the same `PKG_CONFIG_PATH` overrides from
-    /// the downloaded binaries as the parent libraries.
-    ///
-    /// # Arguments
-    /// * `libs`: a list of libraries to link.
-    pub fn add_pkg_config_libraries<T: AsRef<str>>(
-        mut self,
-        libs: impl Iterator<Item = T>,
-    ) -> Self {
-        self.external_pkg_config_libs
-            .extend(libs.map(|s| s.as_ref().into()));
-        self
     }
 
     /// Probe all libraries configured in the Cargo.toml
@@ -835,7 +794,6 @@ impl Config {
     fn probe_full(mut self) -> Result<Dependencies, Error> {
         let mut libraries = self.probe_pkg_config()?;
         libraries.override_from_flags(&self.env);
-
         Ok(libraries)
     }
 
@@ -851,7 +809,6 @@ impl Config {
 
         let metadata = MetaData::from_file(&path)?;
         let mut libraries = Dependencies::default();
-        let mut combined_pkg_config_path = vec![];
 
         for dep in metadata.deps.iter() {
             if let Some(cfg) = &dep.cfg {
@@ -924,19 +881,19 @@ impl Config {
 
             // Is there an overrided pkg-config path for the library?
             #[cfg(not(feature = "binary"))]
-            let pkg_config_path: [&str; 0] = [];
+            let pkg_config_paths: [&str; 0] = [];
             #[cfg(feature = "binary")]
-            let pkg_config_path = [
+            let pkg_config_paths = [
                 system_deps_binary::get_path(name.as_str()),
                 system_deps_binary::get_path(""),
             ]
             .concat();
-            combined_pkg_config_path.extend_from_slice(&pkg_config_path);
 
             // should the lib be statically linked?
-            let statik = self
-                .env
-                .has_value(&EnvVariable::new_link(Some(name)), "static")
+            let statik = cfg!(feature = "binary")
+                || self
+                    .env
+                    .has_value(&EnvVariable::new_link(Some(name)), "static")
                 || self.env.has_value(&EnvVariable::new_link(None), "static");
 
             let mut library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
@@ -951,7 +908,7 @@ impl Config {
                     .range_version(metadata::parse_version(version))
                     .statik(statik);
 
-                let probe = Library::wrap_pkg_config_dir(&pkg_config_path, || {
+                let probe = Library::wrap_pkg_config(&pkg_config_paths, || {
                     Self::probe_with_fallback(&config, lib_name, fallback_lib_names)
                 });
 
@@ -974,31 +931,6 @@ impl Config {
             library.statik = statik;
 
             libraries.add(name, library);
-        }
-
-        // Process libraries added to pkg-config using `Self::add_pkg_config_libraries`
-        for entry in &self.external_pkg_config_libs {
-            let mut config = pkg_config::Config::new();
-            config
-                .print_system_libs(false)
-                .cargo_metadata(false)
-                .statik(true);
-
-            let mut it = entry.trim().splitn(2, " ");
-            let name = it.next().unwrap();
-            if let Some(version) = it.next() {
-                config.range_version(metadata::parse_version(version));
-            }
-
-            match Library::wrap_pkg_config_dir(&combined_pkg_config_path, || config.probe(name)) {
-                Ok(lib) => {
-                    let mut lib = Library::from_pkg_config(name, lib);
-                    // TODO: Change to StaticLinking::Always
-                    lib.statik = true;
-                    libraries.add(name, lib)
-                }
-                Err(_) => println!("cargo:warning=Extra library `{}` is not available", entry),
-            };
         }
 
         Ok(libraries)
@@ -1255,31 +1187,24 @@ impl Library {
         }
     }
 
-    fn wrap_pkg_config_dir<P, F, R>(pkg_config_dir: &[P], f: F) -> Result<R, pkg_config::Error>
-    where
-        P: AsRef<std::ffi::OsStr>,
-        F: FnOnce() -> Result<R, pkg_config::Error>,
-    {
+    /// Calls a function changing the environment so that `pkg-config` will try to
+    /// look first in the provided path.
+    pub fn wrap_pkg_config<T, R>(
+        pkg_config_paths: impl PathOrSlice<T>,
+        f: impl FnOnce() -> Result<R, pkg_config::Error>,
+    ) -> Result<R, pkg_config::Error> {
         // Save current PKG_CONFIG_PATH, so we can restore it
-        let old = env::var("PKG_CONFIG_PATH");
-        let old_paths = old
-            .as_ref()
-            .map(env::split_paths)
-            .unwrap()
-            .collect::<Vec<_>>();
+        let prev = env::var("PKG_CONFIG_PATH").ok();
 
-        let paths = env::join_paths(
-            pkg_config_dir
-                .iter()
-                .map(|p| p.as_ref())
-                .chain(old_paths.iter().map(|p| p.as_os_str())),
-        )
-        .unwrap();
-        env::set_var("PKG_CONFIG_PATH", paths);
+        let prev_paths = prev.iter().flat_map(env::split_paths).collect::<Vec<_>>();
+        let joined_paths = pkg_config_paths.join_paths(prev_paths.as_slice());
+        env::set_var("PKG_CONFIG_PATH", joined_paths);
 
         let res = f();
 
-        env::set_var("PKG_CONFIG_PATH", old.unwrap_or_else(|_| "".into()));
+        if let Some(prev) = prev {
+            env::set_var("PKG_CONFIG_PATH", prev);
+        }
 
         res
     }
@@ -1306,15 +1231,12 @@ impl Library {
     ///       lib, "1.2.4")
     /// });
     /// ```
-    pub fn from_internal_pkg_config<P>(
-        pkg_config_dir: P,
+    pub fn from_internal_pkg_config<T>(
+        pkg_config_paths: impl PathOrSlice<T>,
         lib: &str,
         version: &str,
-    ) -> Result<Self, BuildInternalClosureError>
-    where
-        P: AsRef<Path>,
-    {
-        let pkg_lib = Self::wrap_pkg_config_dir(&[pkg_config_dir.as_ref().as_os_str()], || {
+    ) -> Result<Self, BuildInternalClosureError> {
+        let pkg_lib = Self::wrap_pkg_config(pkg_config_paths, || {
             pkg_config::Config::new()
                 .atleast_version(version)
                 .print_system_libs(false)
@@ -1326,6 +1248,34 @@ impl Library {
         let mut lib = Self::from_pkg_config(lib, pkg_lib);
         lib.statik = true;
         Ok(lib)
+    }
+}
+
+/// A trait that can represent both a reference to a Path like object or a list of paths.
+/// Used in `Library::wrap_pkg_config` and `Library::from_internal_pkg_config` to specify
+/// the list of `pkg-config` paths that should take priority.
+pub trait PathOrSlice<T> {
+    /// Creates an string of paths appropiately joined for an environment variable.
+    /// The paths in `self` will go before the paths in `other`.
+    fn join_paths(self, other: &[PathBuf]) -> OsString;
+}
+
+impl<T: AsRef<OsStr>> PathOrSlice<T> for T {
+    fn join_paths(self, other: &[PathBuf]) -> OsString {
+        env::join_paths(iter::once(self.as_ref()).chain(other.iter().map(|p| p.as_os_str())))
+            .unwrap()
+    }
+}
+
+impl<T: AsRef<OsStr>, S: Borrow<[T]>> PathOrSlice<(T, S)> for &S {
+    fn join_paths(self, other: &[PathBuf]) -> OsString {
+        env::join_paths(
+            self.borrow()
+                .iter()
+                .map(|p| p.as_ref())
+                .chain(other.iter().map(|p| p.as_os_str())),
+        )
+        .unwrap()
     }
 }
 

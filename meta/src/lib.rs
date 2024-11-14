@@ -40,6 +40,8 @@ fn check_cfg(lit: &str) -> Option<bool> {
 
 /// Inserts values from b into a only if they don't already exist.
 /// TODO: This function could be a lot cleaner and it needs better error handling.
+///       The logic for merging values needs to handle more cases so during testing this will have to be rewritten.
+///       Additionally, make sure that only downstream crates can override the metadata.
 fn merge(a: &mut Value, b: Value) {
     match (a, b) {
         (a @ &mut Value::Object(_), Value::Object(b)) => {
@@ -66,7 +68,7 @@ fn merge(a: &mut Value, b: Value) {
 }
 
 /// Recursively read dependency manifests to find metadata matching a key.
-/// The matching metadata is aggregated in a list, with upstream crates having priority
+/// The matching metadata is aggregated in a list, with downstream crates having priority
 /// for overwriting values. It will only read from the metadata sections matching the
 /// provided key.
 ///
@@ -99,6 +101,8 @@ pub fn read_metadata(key: &str) -> Values {
     // Iterate through the dependency tree to visit all packages
     let mut visited: HashSet<&str> = packages.iter().map(|p| p.name.as_str()).collect();
     while let Some(pkg) = packages.pop_front() {
+        // TODO: Optional packages
+
         for dep in &pkg.dependencies {
             match dep.kind {
                 DependencyKind::Normal | DependencyKind::Build => {}
