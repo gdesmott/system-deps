@@ -1,2 +1,5 @@
+[package]
+name = "toml-feature-versions"
+
 [package.metadata.system-deps]
 testdata = { version = "4", v5 = { version = "5" }, v6 = { version = "6" }}

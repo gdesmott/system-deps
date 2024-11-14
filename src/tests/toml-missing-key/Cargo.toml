@@ -1,1 +1,4 @@
+[package]
+name = "toml-missing-key"
+
 no-pkg-config-here = true

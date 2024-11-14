@@ -1,3 +1,6 @@
+[package]
+name = "toml-static"
+
 [package.metadata.system-deps]
 testdata = "4"
 teststaticlib = { version = "1", feature = "test-feature" }

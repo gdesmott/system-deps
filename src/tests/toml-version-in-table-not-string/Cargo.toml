@@ -1,2 +1,5 @@
+[package]
+name = "toml-version-in-table-not-string"
+
 [package.metadata.system-deps]
 testlib = { version = 1 }

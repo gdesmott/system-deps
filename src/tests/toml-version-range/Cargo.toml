@@ -1,3 +1,6 @@
+[package]
+name = "toml-version-range"
+
 [package.metadata.system-deps]
 testdata = "4"
 testlib = { version = ">= 1, < 2", feature = "test-feature" }

@@ -1,2 +1,5 @@
+[package]
+name = "toml-version-missing"
+
 [package.metadata.system-deps]
 testlib = { feature = "test-feature" }
