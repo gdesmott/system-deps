@@ -1,2 +1,5 @@
+[package]
+name = "toml-feature-not-string"
+
 [package.metadata.system-deps]
 testlib = { version = "1", feature = 2 }

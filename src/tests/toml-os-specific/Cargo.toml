@@ -1,3 +1,6 @@
+[package]
+name = "toml-os-specific"
+
 [package.metadata.system-deps.'cfg(target_os = "linux")']
 testdata = "1"
 [package.metadata.system-deps.'cfg(not(target_os = "macos"))']

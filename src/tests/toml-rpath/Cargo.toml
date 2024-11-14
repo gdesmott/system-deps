@@ -1,3 +1,6 @@
+[package]
+name = "toml-rpath"
+
 [package.metadata.system-deps]
 testdata = "4"
 testlibwithrpath = { version = "1", feature = "test-feature" }

@@ -1,3 +1,6 @@
+[package]
+name = "toml-two-libs"
+
 [package.metadata.system-deps]
 testlib = { version = "1" }
 testanotherlib = { version = "1" }

@@ -1,2 +1,5 @@
+[package]
+name = "toml-unexpected-key"
+
 [package.metadata.system-deps]
 testlib = { version = "1", color = "blue" }

@@ -1,2 +1,5 @@
+[package]
+name = "toml-override-name"
+
 [package.metadata.system-deps]
 test_lib = { name = "testlib", version = "1.0", v1_2 = { version = "1.2" } }

@@ -1,2 +1,5 @@
+[package]
+name = "toml-not-table"
+
 [package.metadata]
 system-deps = "not a table"

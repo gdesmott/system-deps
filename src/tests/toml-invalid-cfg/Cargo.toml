@@ -1,2 +1,5 @@
+[package]
+name = "toml-invalid-cfg"
+
 [package.metadata.system-deps.'cfg(badger)']
 testanotherlib = { version = "1", optional = true }
