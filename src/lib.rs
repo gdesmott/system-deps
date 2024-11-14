@@ -202,6 +202,7 @@
 //! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
 //! Libraries can be statically linked by defining the environment variable `SYSTEM_DEPS_$NAME_LINK=static`.
 //! You can also use `SYSTEM_DEPS_LINK=static` to statically link all the libraries.
+//! Additionally, you can use `SYSTEM_DEPS(_$NAME)_LINK=static_release` to link statically only on release builds.
 
 #![deny(missing_docs)]
 
@@ -469,7 +470,7 @@ impl Dependencies {
             lib.libs.iter().for_each(|l| {
                 flags.add(BuildFlag::Lib(
                     l.name.clone(),
-                    lib.statik && l.is_static_available,
+                    lib.statik.get() && l.is_static_available,
                 ))
             });
             lib.frameworks
@@ -810,11 +811,17 @@ impl Config {
             let name = &dep.key;
             let build_internal = self.get_build_internal_status(name)?;
 
-            // should the lib be statically linked?
-            let statik = self
+            // Should the lib be statically linked?
+            let statik = match self
                 .env
-                .has_value(&EnvVariable::new_link(Some(name)), "static")
-                || self.env.has_value(&EnvVariable::new_link(None), "static");
+                .get(&EnvVariable::new_link(Some(name)))
+                .or(self.env.get(&EnvVariable::new_link(None)))
+                .as_deref()
+            {
+                Some("static_release") => StaticLinking::Release,
+                Some(_) => StaticLinking::Always,
+                None => StaticLinking::Never,
+            };
 
             let mut library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables(name)
@@ -826,7 +833,7 @@ impl Config {
                     .print_system_libs(false)
                     .cargo_metadata(false)
                     .range_version(metadata::parse_version(version))
-                    .statik(statik);
+                    .statik(statik.get());
 
                 match Self::probe_with_fallback(config, lib_name, fallback_lib_names) {
                     Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
@@ -984,6 +991,27 @@ pub enum Source {
     EnvVariables,
 }
 
+#[derive(Debug, Clone, Copy)]
+/// Should the library be statically linked
+pub enum StaticLinking {
+    /// Always try to link statically. This is the default for internally built libraries.
+    Always,
+    /// Link statically for release builds, and dynamically on debug.
+    Release,
+    /// Always link dynamically. This is the default for regular libraries.
+    Never,
+}
+
+impl StaticLinking {
+    fn get(&self) -> bool {
+        match self {
+            StaticLinking::Always => true,
+            StaticLinking::Release => cfg!(not(debug_assertions)),
+            StaticLinking::Never => false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 /// Internal library name and if a static library is available on the system
 pub struct InternalLib {
@@ -1026,7 +1054,7 @@ pub struct Library {
     /// library version
     pub version: String,
     /// library is statically linked
-    pub statik: bool,
+    pub statik: StaticLinking,
 }
 
 impl Library {
@@ -1082,7 +1110,7 @@ impl Library {
             framework_paths: l.framework_paths,
             defines: l.defines,
             version: l.version,
-            statik: false,
+            statik: StaticLinking::Never,
         }
     }
 
@@ -1098,7 +1126,7 @@ impl Library {
             framework_paths: Vec::new(),
             defines: HashMap::new(),
             version: String::new(),
-            statik: false,
+            statik: StaticLinking::Never,
         }
     }
 
@@ -1157,7 +1185,7 @@ impl Library {
         match pkg_lib {
             Ok(pkg_lib) => {
                 let mut lib = Self::from_pkg_config(lib, pkg_lib);
-                lib.statik = true;
+                lib.statik = StaticLinking::Always;
                 Ok(lib)
             }
             Err(e) => Err(e.into()),
