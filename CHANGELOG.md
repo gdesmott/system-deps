@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.4](https://github.com/gdesmott/system-deps/compare/v7.0.3...v7.0.4) - 2024-11-14
+
+### Other
+
+- use codecov-action v4
+- update coverage badge
+- use actions/checkout@v4
+- re-add coverage job
+
 ## [7.0.3](https://github.com/gdesmott/system-deps/compare/v7.0.2...v7.0.3) - 2024-09-22
 
 ### Other
