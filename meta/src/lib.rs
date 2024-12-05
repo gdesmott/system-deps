@@ -1,16 +1,15 @@
-use std::{
-    collections::{HashSet, VecDeque},
-    path::PathBuf,
-    sync::OnceLock,
-};
+use std::{fmt, io};
 
-use cargo_metadata::{DependencyKind, MetadataCommand};
-use cfg_expr::{targets::get_builtin_target_by_triple, Expression, Predicate};
-use serde_json::{Map, Value};
+mod parse;
+pub use parse::*;
 
-pub use cargo_metadata::Metadata;
-pub use serde_json::from_value;
-pub type Values = Map<String, Value>;
+#[cfg(feature = "binary")]
+mod binary;
+#[cfg(feature = "binary")]
+pub use binary::*;
+
+#[cfg(test)]
+mod test;
 
 /// Path to the top level Cargo.toml.
 pub const BUILD_MANIFEST: &str = env!("BUILD_MANIFEST");
@@ -18,115 +17,50 @@ pub const BUILD_MANIFEST: &str = env!("BUILD_MANIFEST");
 /// Directory where `system-deps` related build products will be stored.
 pub const BUILD_TARGET_DIR: &str = env!("BUILD_TARGET_DIR");
 
-/// Get metadata from every crate in the project.
-fn metadata() -> &'static Metadata {
-    static CACHED: OnceLock<Metadata> = OnceLock::new();
-    CACHED.get_or_init(|| {
-        MetadataCommand::new()
-            .manifest_path(BUILD_MANIFEST)
-            .exec()
-            .unwrap()
-    })
+/// Metadata related errors.
+#[derive(Debug)]
+pub enum Error {
+    // Binary
+    DecompressError(io::Error),
+    DirectoryIsFile(String),
+    InvalidDirectory(io::Error),
+    InvalidExtension(String),
+    LocalFileError(io::Error),
+    SymlinkError(io::Error),
+    // Web
+    DownloadError(reqwest::Error),
 }
 
-fn check_cfg(lit: &str) -> Option<bool> {
-    let cfg = Expression::parse(lit).ok()?;
-    let target = get_builtin_target_by_triple(&std::env::var("TARGET").ok()?)?;
-    cfg.eval(|pred| match pred {
-        Predicate::Target(tp) => Some(tp.matches(target)),
-        _ => None,
-    })
-}
-
-/// Inserts values from b into a only if they don't already exist.
-/// TODO: This function could be a lot cleaner and it needs better error handling.
-///       The logic for merging values needs to handle more cases so during testing this will have to be rewritten.
-///       Additionally, make sure that only downstream crates can override the metadata.
-fn merge(a: &mut Value, b: Value) {
-    match (a, b) {
-        (a @ &mut Value::Object(_), Value::Object(b)) => {
-            for (k, v) in b {
-                // Check the cfg expressions on the tree to see if they apply
-                if k.starts_with("cfg(") {
-                    if check_cfg(&k).unwrap_or_default() {
-                        merge(a, v);
-                    }
-                    continue;
-                }
-                let a = a.as_object_mut().unwrap();
-                if let Some(e) = a.get_mut(&k) {
-                    if e.is_object() {
-                        merge(e, v);
-                    }
-                } else {
-                    a.insert(k, v);
-                }
-            }
-        }
-        (a, b) => *a = b,
+impl From<reqwest::Error> for Error {
+    fn from(e: reqwest::Error) -> Self {
+        Self::DownloadError(e)
     }
 }
 
-/// Recursively read dependency manifests to find metadata matching a key.
-/// The matching metadata is aggregated in a list, with downstream crates having priority
-/// for overwriting values. It will only read from the metadata sections matching the
-/// provided key.
-///
-/// ```toml
-/// [package.metadata.key]
-/// some_value = ...
-/// other_value = ...
-/// ```
-pub fn read_metadata(key: &str) -> Values {
-    let metadata = metadata();
-    let project_root = PathBuf::from(BUILD_MANIFEST);
-    let project_root = project_root.parent().unwrap();
-
-    // Depending on if we are on a workspace or not, use the root package or all the
-    // workspace packages as a starting point
-    let mut packages = if let Some(root) = metadata.root_package() {
-        VecDeque::from([root])
-    } else {
-        metadata.workspace_packages().into()
-    };
-
-    // Add the workspace metadata (if it exists) first
-    let mut res = metadata
-        .workspace_metadata
-        .as_object()
-        .and_then(|meta| meta.get(key))
-        .cloned()
-        .unwrap_or(Value::Object(Map::new()));
-
-    // Iterate through the dependency tree to visit all packages
-    let mut visited: HashSet<&str> = packages.iter().map(|p| p.name.as_str()).collect();
-    while let Some(pkg) = packages.pop_front() {
-        // TODO: Optional packages
-
-        for dep in &pkg.dependencies {
-            match dep.kind {
-                DependencyKind::Normal | DependencyKind::Build => {}
-                _ => continue,
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::DecompressError(e) => {
+                write!(f, "Error while decompressing the binaries: {:?}", e)
             }
-            if !visited.insert(&dep.name) {
-                continue;
+            Error::DirectoryIsFile(dir) => write!(f, "The target directory is a file {:?}", dir),
+            Error::InvalidDirectory(e) => write!(f, "The binary directory is not valid: {:?}", e),
+            Error::InvalidExtension(url) => {
+                write!(f, "Unsuppported binary extension for {:?}", url)
             }
-            if let Some(dep_pkg) = metadata.packages.iter().find(|p| p.name == dep.name) {
-                packages.push_back(dep_pkg);
-            };
+            Error::LocalFileError(e) => {
+                write!(f, "Error reading the local binary file: {:?}", e)
+            }
+            Error::SymlinkError(e) => {
+                write!(f, "Error creating symlink to local binary folder: {:?}", e)
+            }
+            Error::DownloadError(e) => write!(f, "Error while downloading: {:?}", e),
         }
-
-        // Keep track of the local manifests to see if they change
-        if pkg.manifest_path.starts_with(project_root) {
-            println!("cargo:rerun-if-changed={}", pkg.manifest_path);
-        };
-
-        // Get the `package.metadata.key` and merge it
-        let Some(meta) = pkg.metadata.as_object().and_then(|meta| meta.get(key)) else {
-            continue;
-        };
-        merge(&mut res, meta.clone());
     }
+}
 
-    res.as_object().cloned().unwrap_or_default()
+/// Looks up an environment variable and adds it to the rerun flags.
+fn env(name: &str) -> Option<String> {
+    println!("cargo:rerun-if-env-changed={}", name);
+    std::env::var(name).ok()
 }

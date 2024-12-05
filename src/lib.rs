@@ -296,6 +296,9 @@ use std::str::FromStr;
 mod metadata;
 use metadata::MetaData;
 
+#[cfg(feature = "binary")]
+include!(env!("BINARY_CONFIG"));
+
 /// system-deps errors
 #[derive(Debug)]
 pub enum Error {
@@ -883,11 +886,7 @@ impl Config {
             #[cfg(not(feature = "binary"))]
             let pkg_config_paths: [&str; 0] = [];
             #[cfg(feature = "binary")]
-            let pkg_config_paths = [
-                system_deps_binary::get_path(name.as_str()),
-                system_deps_binary::get_path(""),
-            ]
-            .concat();
+            let pkg_config_paths = [get_path(name.as_str()), get_path("")].concat();
 
             // should the lib be statically linked?
             let statik = cfg!(feature = "binary")
