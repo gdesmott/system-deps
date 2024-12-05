@@ -5,11 +5,7 @@ pub fn main() {
 
 #[cfg(feature = "binary")]
 mod binary {
-    use std::{
-        collections::HashMap,
-        fs,
-        path::{Path, PathBuf},
-    };
+    use std::{collections::HashMap, fs, path::Path};
 
     use system_deps_meta::{read_metadata, Binary, BinaryPaths, BUILD_TARGET_DIR};
 
@@ -21,8 +17,7 @@ mod binary {
         println!("cargo:rustc-env=BINARY_CONFIG={}", dest_path.display());
 
         // Read metadata from the crate graph
-        let manifest = PathBuf::from(system_deps_meta::BUILD_MANIFEST);
-        let metadata = read_metadata(&manifest, "system-deps");
+        let metadata = read_metadata(system_deps_meta::BUILD_MANIFEST, "system-deps");
 
         // Download the binaries and get their pkg_config paths
         let mut binaries = metadata

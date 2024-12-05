@@ -1,74 +1,157 @@
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     path::Path,
-    sync::OnceLock,
 };
 
-use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
+use cargo_metadata::{DependencyKind, MetadataCommand};
 use cfg_expr::{targets::get_builtin_target_by_triple, Expression, Predicate};
-use serde::de::DeserializeOwned;
-use serde_json::{from_value, Map, Value};
+use serde::{de::DeserializeOwned, Serialize};
+use serde_json::{from_value, Value};
+
+use crate::Error;
 
 /// Stores a section of metadata found in one package.
 /// `next` indexes the  to packages downstream from this.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize)]
 pub struct MetadataNode {
-    value: Option<Value>,
-    next: HashSet<String>,
+    value: Value,
+    parents: HashSet<String>,
 }
 
 /// Graph like structure that stores the package nodes that have a metadata entry.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct MetadataList {
-    nodes: HashMap<&'static str, MetadataNode>,
+    nodes: HashMap<String, MetadataNode>,
 }
 
 impl MetadataList {
-    fn new() -> Self {
-        Self {
-            nodes: HashMap::from([("", MetadataNode::default())]),
-        }
-    }
+    /// Recursively read dependency manifests to find metadata matching a key using cargo_metadata.
+    ///
+    /// ```toml
+    /// [package.metadata.section]
+    /// some_value = ...
+    /// other_value = ...
+    /// ```
+    pub fn from(manifest: impl AsRef<Path>, section: &str) -> Self {
+        let data = MetadataCommand::new()
+            .manifest_path(manifest.as_ref())
+            .exec()
+            .unwrap();
 
-    fn insert(&mut self, name: &'static str, parent: &str, values: Option<Value>) {
-        match values {
-            Some(v) => {
-                // Create a new node if it doesn't exist
-                self.nodes.entry(name).or_insert_with(|| MetadataNode {
-                    value: Some(v),
-                    ..Default::default()
-                });
-            }
-            None => {
-                if !self.nodes.contains_key(name) {
-                    // If no value is provided only add the node to the parent if it already exists
-                    return;
-                }
-            }
+        // Create the root node from the workspace metadata
+        let value = data
+            .workspace_metadata
+            .as_object()
+            .and_then(|m| m.get(section))
+            .cloned()
+            .unwrap_or(Value::Null);
+        let root_node = MetadataNode {
+            value,
+            ..Default::default()
         };
 
-        // Add child to the parent node
-        let parent_node = self
-            .nodes
-            .get_mut(parent)
-            .expect("Error creating metadata graph");
-        parent_node.next.insert(name.into());
+        // Use the root package or all the workspace packages as a starting point
+        let mut packages = if let Some(root) = data.root_package() {
+            VecDeque::from([(root, None)])
+        } else {
+            data.workspace_packages()
+                .into_iter()
+                .map(|p| (p, None))
+                .collect()
+        };
+
+        let mut res = Self {
+            nodes: HashMap::from([("".into(), root_node)]),
+        };
+
+        // Iterate through the dependency tree to visit all packages
+        let mut visited: HashSet<&str> = packages.iter().map(|(p, _)| p.name.as_str()).collect();
+        while let Some((pkg, parent)) = packages.pop_front() {
+            // TODO: Optional packages
+
+            // Keep track of the local manifests to see if they change
+            if pkg
+                .manifest_path
+                .starts_with(manifest.as_ref().parent().unwrap())
+            {
+                println!("cargo:rerun-if-changed={}", pkg.manifest_path);
+            };
+
+            // Get `package.metadata.section` and add it to the metadata graph
+            let section = pkg.metadata.as_object().and_then(|meta| meta.get(section));
+            res.insert(
+                pkg.name.clone(),
+                parent.unwrap_or_default(),
+                section.cloned().unwrap_or(Value::Null),
+            );
+            let next_parent = section
+                .and(Some(pkg.name.as_str()))
+                .or(Some(parent.unwrap_or_default()));
+
+            // Add dependencies to the queue
+            for dep in &pkg.dependencies {
+                match dep.kind {
+                    DependencyKind::Normal | DependencyKind::Build => {}
+                    _ => continue,
+                }
+
+                // If visited, don't keep going, but add dependencies to graph
+                if !visited.insert(&dep.name) {
+                    res.insert(pkg.name.clone(), parent.unwrap_or_default(), Value::Null);
+                    continue;
+                }
+
+                if let Some(dep_pkg) = data.packages.iter().find(|p| p.name == dep.name) {
+                    packages.push_back((dep_pkg, next_parent));
+                };
+            }
+        }
+
+        res
+    }
+
+    fn insert(&mut self, name: String, parent: &str, value: Value) {
+        // If no value is provided only add the node to the parent if it already exists
+        if value.is_null() && !self.nodes.contains_key(&name) {
+            return;
+        }
+
+        self.nodes
+            .entry(name.clone())
+            .or_insert_with(|| MetadataNode {
+                value,
+                ..Default::default()
+            })
+            .parents
+            .insert(parent.into());
     }
 
     /// Applies the reducing rules to the tree and returns the final value transformed to the desired type
-    pub fn get<T: DeserializeOwned>(&self, f: impl Fn() -> bool) -> Option<T> {
-        let base = self.nodes.get("").unwrap();
-        let mut stack = VecDeque::from([base]);
+    /// Starts on a node and goes downstream to its parents
+    pub fn get<T: DeserializeOwned>(
+        &self,
+        package: &str,
+        merge: impl Fn(Value, &Value) -> Result<Value, Error>,
+    ) -> Result<T, Error> {
+        let base = self
+            .nodes
+            .get(package)
+            .ok_or(Error::PackageNotFound(package.into()))?;
 
-        let mut value = Value::Null;
-        while let Some(node) = stack.pop_front() {
-            stack.extend(node.next.iter().filter_map(|n| self.nodes.get(n.as_str())));
-            if let Some(v) = &node.value {
-                value = v.clone();
-            };
+        let mut nodes = VecDeque::from([base]);
+        let mut res = Value::Null;
+
+        // TODO: Backtrack and handle conflicts
+        // TODO: cfg
+
+        while let Some(node) = nodes.pop_front() {
+            for p in &node.parents {
+                nodes.push_front(self.nodes.get(p).ok_or(Error::PackageNotFound(p.into()))?);
+            }
+            res = merge(res, &node.value)?;
         }
 
-        from_value::<T>(value).ok()
+        from_value::<T>(res).map_err(Error::SerializationError)
     }
 
     /// Uses `cfg_expr` to evaluate a conditional expression in a toml key.
@@ -89,92 +172,42 @@ impl MetadataList {
     }
 
     #[cfg(test)]
-    pub fn nodes(&self) -> &HashMap<&'static str, MetadataNode> {
+    pub fn nodes(&self) -> &HashMap<String, MetadataNode> {
         &self.nodes
     }
 }
 
-/// Recursively read dependency manifests to find metadata matching a key.
-/// The matching metadata is aggregated in a list, with downstream crates having priority
-/// for overwriting values. It will only read from the metadata sections matching the
-/// provided section key.
-///
-/// ```toml
-/// [package.metadata.section]
-/// some_value = ...
-/// other_value = ...
-/// ```
-pub fn read_metadata(manifest: &Path, section: &str) -> MetadataList {
-    static CACHED: OnceLock<Metadata> = OnceLock::new();
-    let metadata = CACHED.get_or_init(|| {
-        MetadataCommand::new()
-            .manifest_path(manifest)
-            .exec()
-            .unwrap()
-    });
-
-    let project_root = manifest.parent().unwrap();
-
-    // Depending on if we are on a workspace or not, use the root package or all the
-    // workspace packages as a starting point
-    let mut packages = if let Some(root) = metadata.root_package() {
-        VecDeque::from([(root, None)])
-    } else {
-        metadata
-            .workspace_packages()
-            .into_iter()
-            .map(|p| (p, None))
-            .collect()
-    };
-
-    // Add the workspace metadata (if it exists) first
-    //let mut res = metadata
-    //    .workspace_metadata
-    //    .as_object()
-    //    .and_then(|meta| meta.get(key))
-    //    .cloned()
-    //    .unwrap_or(Value::Object(Map::new()));
-
-    let mut res = MetadataList::new();
-
-    // Iterate through the dependency tree to visit all packages
-    let mut visited: HashSet<&str> = packages.iter().map(|(p, _)| p.name.as_str()).collect();
-    while let Some((pkg, parent)) = packages.pop_front() {
-        // TODO: Optional packages
-
-        // Keep track of the local manifests to see if they change
-        if pkg.manifest_path.starts_with(project_root) {
-            println!("cargo:rerun-if-changed={}", pkg.manifest_path);
-        };
-
-        // Get `package.metadata.section` and add it to the metadata graph
-        let section = pkg.metadata.as_object().and_then(|meta| meta.get(section));
-        res.insert(
-            pkg.name.as_str(),
-            parent.unwrap_or_default(),
-            section.cloned(),
-        );
-
-        // TODO: If this is the last element, don't keep going
-
-        // Add dependencies to the queue
-        for dep in &pkg.dependencies {
-            match dep.kind {
-                DependencyKind::Normal | DependencyKind::Build => {}
-                _ => continue,
-            }
-
-            // If visited, don't keep going, but add dependencies to graph
-            if !visited.insert(&dep.name) {
-                res.insert(pkg.name.as_str(), parent.unwrap_or_default(), None);
-                continue;
-            }
-
-            if let Some(dep_pkg) = metadata.packages.iter().find(|p| p.name == dep.name) {
-                packages.push_back((dep_pkg, Some(pkg.name.as_str())));
-            };
-        }
+pub fn merge_default(rhs: Value, lhs: &Value) -> Result<Value, Error> {
+    if rhs == *lhs {
+        return Ok(rhs);
+    }
+    if let Value::Null = lhs {
+        return Ok(rhs);
+    }
+    if let Value::Null = rhs {
+        return Ok(lhs.clone());
     }
 
-    res
+    if std::mem::discriminant(&rhs) != std::mem::discriminant(lhs) {
+        return Err(Error::IncompatibleMerge);
+    }
+
+    match rhs {
+        Value::Array(mut r) => {
+            for v in lhs.as_array().unwrap() {
+                if !r.contains(v) {
+                    r.push(v.clone());
+                }
+            }
+            Ok(Value::Array(r))
+        }
+        Value::Object(mut r) => {
+            for (k, v) in lhs.as_object().unwrap() {
+                let merged = merge_default(r.get(k).cloned().unwrap_or(Value::Null), v)?;
+                r.insert(k.into(), merged);
+            }
+            Ok(Value::Object(r))
+        }
+        _ => Ok(lhs.clone()),
+    }
 }

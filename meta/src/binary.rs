@@ -52,12 +52,12 @@ pub struct Binary {
     /// The `system-deps` formatted name of another library which has binaries specified.
     /// This library will alias the configuration of the followed one. If `url` is specified
     /// alongside this field, it will no longer follow the original configuration.
-    follows: Option<String>,
+    _follows: Option<String>,
 }
 
 impl Binary {
     pub fn paths(&self, name: &str) -> Result<HashSet<PathBuf>, Error> {
-        // Set this binary to follow
+        // TODO: Set this binary to follow
         //if let Some(follows) = self.follows {
         //    follow_list.insert(name.clone(), follows);
         //}
@@ -176,7 +176,7 @@ pub fn get_path(name: &str) -> &[&'static str] {{
 /// Checks if the target directory is valid and if binaries need to be redownloaded.
 /// On an `Ok` result, if the value is true it means that the directory is correct.
 fn check_valid_dir(dst: &Path, checksum: Option<&str>) -> Result<bool, Error> {
-    let e = |e| Error::InvalidDirectory(e);
+    let e = Error::InvalidDirectory;
 
     // If it doesn't exist yet the download will need to happen
     if !dst.try_exists().map_err(e)? {
@@ -224,7 +224,7 @@ fn download(url: &str, dst: &Path) -> Result<(), Error> {
         let path = Path::new(file_path);
         match ext {
             Ok(ext) => {
-                let file = fs::read(path).map_err(|e| Error::LocalFileError(e))?;
+                let file = fs::read(path).map_err(Error::LocalFileError)?;
                 decompress(&file, dst, ext)?;
             }
             Err(e) => {
@@ -234,11 +234,10 @@ fn download(url: &str, dst: &Path) -> Result<(), Error> {
                 }
                 if !dst.read_link().is_ok_and(|l| l == path) {
                     #[cfg(unix)]
-                    std::os::unix::fs::symlink(file_path, dst)
-                        .map_err(|e| Error::SymlinkError(e))?;
+                    std::os::unix::fs::symlink(file_path, dst).map_err(Error::SymlinkError)?;
                     #[cfg(windows)]
                     std::os::windows::fs::symlink_dir(file_path, dst)
-                        .map_err(|e| Error::SymlinkError(e))?;
+                        .map_err(Error::SymlinkError)?;
                 }
             }
         };
@@ -250,7 +249,9 @@ fn download(url: &str, dst: &Path) -> Result<(), Error> {
         #[cfg(feature = "web")]
         {
             let ext = ext?;
-            let file = reqwest::blocking::get(url).and_then(|req| req.bytes())?;
+            let file = reqwest::blocking::get(url)
+                .and_then(|req| req.bytes())
+                .map_err(Error::DownloadError)?;
             decompress(&file, dst, ext)?;
         }
     }
@@ -265,7 +266,7 @@ fn download(url: &str, dst: &Path) -> Result<(), Error> {
 fn decompress(file: &[u8], dst: &Path, ext: Extension) -> Result<(), Error> {
     #[cfg(any(feature = "gz", feature = "xz", feature = "zip", feature = "pkg"))]
     {
-        let e = |e| Error::DecompressError(e);
+        let e = Error::DecompressError;
 
         match ext {
             #[cfg(feature = "gz")]
