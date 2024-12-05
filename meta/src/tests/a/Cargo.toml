@@ -1,0 +1,8 @@
+[package]
+name = "a"
+
+[package.metadata.system-deps.a]
+version = "1.0"
+name = "a"
+url = "file:///tmp/test"
+checksum = "abcd"

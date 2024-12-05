@@ -19,6 +19,9 @@ edition = "2018"
 documentation = "https://docs.rs/system-deps/"
 readme = "README.md"
 
+[build-dependencies]
+system-deps-meta = { path = "./meta", optional = true }
+
 [dependencies]
 pkg-config = "0.3.25"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
@@ -30,3 +33,10 @@ cfg-expr = { version = "0.17", features = ["targets"] }
 lazy_static = "1"
 itertools = "0.13"
 assert_matches = "1.5"
+
+[features]
+default = [ "binary" ]
+binary = [ "system-deps-meta/binary" ]
+gx = [ "system-deps-meta/gz" ]
+xz = [ "system-deps-meta/xz" ]
+zip = [ "system-deps-meta/zip" ]

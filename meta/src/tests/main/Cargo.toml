@@ -1,0 +1,9 @@
+[package]
+name = "main"
+
+[dependencies]
+a = { path = "../a" }
+
+[package.metadata.system-deps.a]
+url = "file:///tmp/other"
+checksum = "wxyz"
