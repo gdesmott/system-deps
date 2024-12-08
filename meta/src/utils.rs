@@ -1,112 +1,110 @@
 use cfg_expr::{targets::get_builtin_target_by_triple, Expression, Predicate};
-use serde_json::{Map, Value};
+use toml::{Table, Value};
 
-use crate::error::{CfgError, Error};
+use crate::error::Error;
 
 /// Base merge function to use with `MetadataList::get`.
 /// It will join `serde_json` values based on some assignment rules.
-pub fn merge_default(rhs: Value, lhs: &Value, overwrite: bool) -> Result<Value, Error> {
-    // 1. If they are the same, we can stop early
-    if rhs == *lhs {
-        return Ok(rhs);
-    }
+pub fn merge_default(rhs: &mut Table, lhs: Table, overwrite: bool) -> Result<(), Error> {
+    for (key, lhs) in lhs {
+        // 1. None = * will always return the new value.
+        let Some(rhs) = rhs.get_mut(&key) else {
+            rhs.insert(key, lhs);
+            continue;
+        };
 
-    // 2.1. (* = Null) will always return the old value.
-    if let Value::Null = lhs {
-        return Ok(rhs);
-    }
-    // 2.2. (Null = *) will always return the new value.
-    if let Value::Null = rhs {
-        return Ok(lhs.clone());
-    }
+        // 2. If they are the same, we can stop early
+        if *rhs == lhs {
+            continue;
+        }
 
-    // 3. Assignment from two different types (excluding `Null`) is incompatible.
-    if std::mem::discriminant(&rhs) != std::mem::discriminant(lhs) {
-        return Err(Error::IncompatibleMerge);
-    }
+        // 3. Assignment from two different types is incompatible.
+        if std::mem::discriminant(rhs) != std::mem::discriminant(&lhs) {
+            return Err(Error::IncompatibleMerge);
+        }
 
-    match (rhs, lhs) {
-        // 4. Arrays return a combined deduplicated list.
-        (Value::Array(mut r), Value::Array(l)) => {
-            for v in l {
-                if !r.contains(v) {
-                    r.push(v.clone());
+        match (rhs, lhs) {
+            // 4. Arrays return a combined deduplicated list.
+            (Value::Array(rhs), Value::Array(lhs)) => {
+                for value in lhs {
+                    if !rhs.contains(&value) {
+                        rhs.push(value);
+                    }
                 }
             }
-            Ok(Value::Array(r))
-        }
-        // 5. Objects combine keys from both following the previous rules.
-        (Value::Object(mut r), Value::Object(l)) => {
-            for (k, v) in l {
-                let merged = merge_default(r.get(k).cloned().unwrap_or(Value::Null), v, overwrite)?;
-                r.insert(k.clone(), merged);
+            //// 5. Tables combine keys from both following the previous rules.
+            (Value::Table(rhs), Value::Table(lhs)) => {
+                merge_default(rhs, lhs, overwrite)?;
             }
-            Ok(Value::Object(r))
-        }
-        // 6. For simple types (Booleans, Numbers and Strings):
-        //   6.1. If overwrite is true, the new value will be returned.
-        //   6.2. Otherwise, if the value is not the same there will be an error.
-        (_, l) => {
-            if overwrite {
-                Ok(l.clone())
-            } else {
-                Err(Error::IncompatibleMerge)
+            // 6. For simple types (Booleans, Numbers and Strings):
+            //   6.1. If overwrite is true, the new value will be returned.
+            //   6.2. Otherwise, if the value is not the same there will be an error.
+            (r, l) => {
+                if !overwrite {
+                    return Err(Error::IncompatibleMerge);
+                }
+                *r = l;
             }
         }
     }
+    Ok(())
 }
 
 /// ```toml
 /// [package.metadata.'cfg(target = "unix")']
 /// value = ...
 /// ```
-pub fn reduce_default(
-    value: Value,
-    merge: &impl Fn(Value, &Value, bool) -> Result<Value, Error>,
-) -> Result<Value, Error> {
-    let Value::Object(map) = value else {
-        return Ok(value);
-    };
+pub fn reduce(table: Table) -> Result<Table, Error> {
+    let mut res = Table::new();
+    let mut conditionals = Table::new();
 
-    let mut res = Map::new();
-    let mut conditionals = Map::new();
-
-    for (k, v) in map.into_iter() {
+    for (key, value) in table {
         // Conditional expressions
-        if let Some(cfg) = k.strip_prefix("cfg(") {
+        if let Some(cfg) = key.strip_prefix("cfg(") {
             let pred = cfg
                 .strip_suffix(")")
-                .ok_or(CfgError::Unsupported(k.clone()))?;
+                .ok_or(Error::UnsupportedCfg(key.clone()))?;
             if !check_cfg(pred)? {
                 continue;
             };
-            let Value::Object(map) = reduce_default(v, merge)? else {
-                return Err(CfgError::NotObject.into());
+            let Value::Table(inner) = value else {
+                return Err(Error::CfgNotObject(key));
             };
-            for (k, v) in map {
-                let prev = conditionals.get(&k).cloned().unwrap_or(Value::Null);
-                conditionals.insert(k, merge(prev, &v, false)?);
+            for (inner_key, value) in inner {
+                let Value::Table(value) = value else {
+                    return Err(Error::CfgNotObject(key));
+                };
+                let prev = conditionals
+                    .entry(inner_key)
+                    .or_insert(Value::Table(Table::new()));
+
+                merge_default(prev.as_table_mut().unwrap(), value, false)?;
             }
             continue;
         }
 
         // General case
-        res.insert(k, reduce_default(v, merge)?);
+        res.insert(
+            key,
+            match value {
+                Value::Table(t) => Value::Table(reduce(t)?),
+                v => v,
+            },
+        );
     }
 
     // Conditionals can overwrite the default case
-    let res = merge(Value::Object(res), &Value::Object(conditionals), true)?;
-
+    merge_default(&mut res, conditionals, true)?;
     Ok(res)
 }
 
-fn check_cfg(pred: &str) -> Result<bool, CfgError> {
+fn check_cfg(pred: &str) -> Result<bool, Error> {
     let target = get_builtin_target_by_triple(env!("TARGET"))
         .expect("The target set by the build script should be valid");
-    let expr = Expression::parse(pred).map_err(CfgError::Invalid)?;
+    let expr = Expression::parse(pred).map_err(Error::InvalidCfg)?;
     let res = expr.eval(|pred| match pred {
-        Predicate::Target(tp) => Some(tp.matches(target)),
+        Predicate::Target(p) => Some(p.matches(target)),
         _ => None,
     });
-    res.ok_or(CfgError::Unsupported(pred.into()))
+    res.ok_or(Error::UnsupportedCfg(pred.into()))
 }

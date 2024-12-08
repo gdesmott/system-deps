@@ -1,25 +1,31 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet, VecDeque},
+    iter,
     path::Path,
 };
 
 use cargo_metadata::{DependencyKind, MetadataCommand};
-use serde::{de::DeserializeOwned, Serialize};
-use serde_json::{from_value, Value};
+use serde::Serialize;
+use toml::Table;
 
-use crate::error::Error;
+use crate::{error::Error, utils::reduce};
 
 /// Stores a section of metadata found in one package.
 #[derive(Debug, Default, Serialize)]
 pub struct MetadataNode {
-    value: Value,
+    /// Deserialized metadata.
+    table: Table,
+    /// The parents of this package.
     parents: BTreeSet<String>,
 }
 
 /// Graph like structure that stores the package nodes that have a metadata entry.
 #[derive(Debug, Serialize)]
 pub struct MetadataList {
+    /// Stores the metadata of one package.
     pub nodes: HashMap<String, MetadataNode>,
+    /// Packages without dependencies.
+    pub leaves: HashSet<String>,
 }
 
 impl MetadataList {
@@ -30,48 +36,47 @@ impl MetadataList {
     /// some_value = ...
     /// other_value = ...
     /// ```
-    pub fn from(manifest: impl AsRef<Path>, section: &str) -> Self {
+    pub fn new(manifest: impl AsRef<Path>, section: &str) -> Result<Self, Error> {
         let data = MetadataCommand::new()
             .manifest_path(manifest.as_ref())
             .exec()
             .unwrap();
 
         // Create the root node from the workspace metadata
-        let value = data
-            .workspace_metadata
-            .as_object()
-            .and_then(|m| m.get(section))
-            .cloned()
-            .unwrap_or(Value::Null);
+        let value = data.workspace_metadata.get(section).cloned();
         let root_node = MetadataNode {
-            value,
+            table: reduce(
+                value
+                    .and_then(|v| Table::try_from(v).ok())
+                    .unwrap_or_default(),
+            )?,
             ..Default::default()
         };
 
         // Use the root package or all the workspace packages as a starting point
-        let mut packages = if let Some(root) = data.root_package() {
-            VecDeque::from([(root, "")])
+        let mut packages: VecDeque<_> = if let Some(root) = data.root_package() {
+            [(root, "")].into()
         } else {
             data.workspace_packages()
                 .into_iter()
-                .map(|p| (p, ""))
+                .zip(iter::repeat(""))
                 .collect()
         };
 
         let mut res = Self {
             nodes: HashMap::from([("".into(), root_node)]),
+            leaves: HashSet::from(["".into()]),
         };
 
         // Iterate through the dependency tree to visit all packages
         let mut visited = HashSet::new();
         while let Some((pkg, parent)) = packages.pop_front() {
-            // TODO: Optional packages
-
             // If we already handled this node, update parents and keep going
             if !visited.insert(&pkg.name) {
-                res.nodes
-                    .get_mut(&pkg.name)
-                    .map(|n| n.parents.insert(parent.into()));
+                if let Some(node) = res.nodes.get_mut(&pkg.name) {
+                    node.parents.insert(parent.into());
+                    res.leaves.remove(parent);
+                }
                 continue;
             }
 
@@ -84,100 +89,95 @@ impl MetadataList {
             };
 
             // Get `package.metadata.section` and add it to the metadata graph
-            let node = if let Some(section) =
-                pkg.metadata.as_object().and_then(|meta| meta.get(section))
-            {
-                Some(
-                    res.nodes
-                        .entry(pkg.name.clone())
-                        .or_insert_with(|| MetadataNode {
-                            value: section.clone(),
-                            ..Default::default()
-                        }),
-                )
-            } else {
-                res.nodes.get_mut(&pkg.name)
+            let node = match (
+                res.nodes.get_mut(&pkg.name),
+                pkg.metadata.get(section).cloned(),
+            ) {
+                (None, Some(s)) => {
+                    let node = MetadataNode {
+                        table: reduce(Table::try_from(s)?)?,
+                        ..Default::default()
+                    };
+                    res.leaves.insert(pkg.name.clone());
+                    res.nodes.insert(pkg.name.clone(), node);
+                    res.nodes.get_mut(&pkg.name)
+                }
+                (n, _) => n,
             };
 
-            let next_parent = if node.is_some() {
+            // Update parents
+            let next_parent = if let Some(node) = node {
+                node.parents.insert(parent.into());
+                res.leaves.remove(parent);
                 pkg.name.as_str()
             } else {
                 parent
             };
 
-            node.map(|p| p.parents.insert(parent.into()));
-
             // Add dependencies to the queue
             for dep in &pkg.dependencies {
-                match dep.kind {
-                    DependencyKind::Normal | DependencyKind::Build => {}
-                    _ => continue,
+                if !matches!(dep.kind, DependencyKind::Normal) {
+                    continue;
                 }
-
                 if let Some(dep_pkg) = data.packages.iter().find(|p| p.name == dep.name) {
                     packages.push_back((dep_pkg, next_parent));
                 };
             }
         }
 
-        res
+        Ok(res)
     }
 
-    /// Applies reducing rules to the tree and returns the final value transformed to the desired type.
-    /// It first searchs one branch from the package to the project root. Then, it backtracks through
-    /// the rest of the paths. If the final values from each path are incompatible, a merge error
-    /// is returned.
+    /// Applies reducing rules to the tree and returns the final value. It first searchs one branch from the
+    /// package to the project root. Then, it backtracks through the rest of the paths. If the final values
+    /// from each path are incompatible, a merge error is returned.
     ///
-    /// `merge` is a function that takes the current value, the new value that should be applied to it,
-    /// and whether it should allow the second value to overwrite the first. When traveling up the tree
-    /// this is true since we want dependent crates to have priority, but when comparing horizontally
-    /// it is false to avoid conflicts.
-    ///
-    /// `reduce` will take the output of merge and apply rules to modify the returned structure.
-    /// For example, checking cfg conditions and library versions.
-    pub fn get<
-        T: DeserializeOwned,
-        M: Fn(Value, &Value, bool) -> Result<Value, Error>,
-        R: Fn(Value, &M) -> Result<Value, Error>,
-    >(
+    /// `merge` is a function that takes the current value, the new value that should be applied to it, and
+    /// whether it should allow the second value to overwrite the first. When traveling up the tree this is
+    /// true since we want dependent crates to have priority, but when comparing horizontally it is false to
+    /// avoid conflicts.
+    pub fn build(
         &self,
+        merge: impl Fn(&mut Table, Table, bool) -> Result<(), Error>,
+    ) -> Result<Table, Error> {
+        let mut res = Table::new();
+
+        for node in &self.leaves {
+            let value = self.get(&merge, node)?;
+            merge(&mut res, value, false)?;
+        }
+
+        Ok(res)
+    }
+
+    /// Helper for `build` that gets a single package branch.
+    fn get(
+        &self,
+        merge: impl Fn(&mut Table, Table, bool) -> Result<(), Error>,
         package: &str,
-        merge: M,
-        reduce: R,
-    ) -> Result<T, Error> {
+    ) -> Result<Table, Error> {
         let base = self
             .nodes
             .get(package)
             .ok_or(Error::PackageNotFound(package.into()))?;
 
         let mut nodes = VecDeque::from([base]);
-        let mut res = Value::Null;
-        let mut curr = Value::Null;
+        let mut res = Table::new();
+        let mut curr = Table::new();
 
-        // Merge
         while let Some(node) = nodes.pop_front() {
             for p in node.parents.iter().rev() {
                 let next = self.nodes.get(p).ok_or(Error::PackageNotFound(p.into()))?;
                 nodes.push_front(next);
             }
-            curr = merge(curr, &node.value, true)?;
+            let value = reduce(node.table.clone())?;
+            merge(&mut curr, value, true)?;
             if node.parents.is_empty() {
-                res = merge(res, &curr, false)?;
-                curr = Value::Null;
+                merge(&mut res, curr, false)?;
+                curr = Table::new();
             }
         }
 
-        // Reduce
-        res = reduce(res, &merge)?;
-
-        // Get package
-        let Value::Object(mut map) = res else {
-            return Err(Error::IncompatibleMerge);
-        };
-        let Some(value) = map.remove(package) else {
-            return Err(Error::PackageNotFound(package.into()));
-        };
-
-        from_value::<T>(value).map_err(Error::SerializationError)
+        Ok(res)
     }
 }

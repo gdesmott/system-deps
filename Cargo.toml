@@ -1,5 +1,8 @@
-[package]
-name = "system-deps"
+[workspace]
+members = [ "meta" ]
+exclude = [ "target" ]
+
+[workspace.package]
 version = "7.0.3"
 authors = [
     "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
@@ -17,10 +20,20 @@ keywords = [
 ]
 edition = "2018"
 documentation = "https://docs.rs/system-deps/"
-readme = "README.md"
 
-[build-dependencies]
-system-deps-meta = { path = "./meta", optional = true }
+[workspace.dependencies]
+system-deps-meta = { path = "./meta" }
+
+[package]
+name = "system-deps"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+keywords.workspace = true
+edition.workspace = true
+documentation.workspace = true
+readme = "README.md"
 
 [dependencies]
 pkg-config = "0.3.25"
@@ -29,13 +42,15 @@ version-compare = "0.2"
 heck = "0.5"
 cfg-expr = { version = "0.17", features = ["targets"] }
 
+[build-dependencies]
+system-deps-meta = { workspace = true, optional = true }
+
 [dev-dependencies]
-lazy_static = "1"
 itertools = "0.13"
 assert_matches = "1.5"
 
 [features]
-default = [ "binary" ]
+default = [ ]
 binary = [ "system-deps-meta/binary" ]
 gx = [ "system-deps-meta/gz" ]
 xz = [ "system-deps-meta/xz" ]

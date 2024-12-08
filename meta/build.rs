@@ -4,7 +4,7 @@ use std::{
 };
 
 /// Environment variable to override the top level `Cargo.toml`.
-const MANIFEST_VAR: &str = "SYSTEM_DEPS_MANIFEST";
+const MANIFEST_VAR: &str = "SYSTEM_DEPS_BUILD_MANIFEST";
 
 /// Environment variable to override the directory where `system-deps`
 /// will store build products such as binary outputs.
@@ -24,27 +24,6 @@ fn find_with_cargo(dir: &Path) -> Option<PathBuf> {
         return None;
     }
     Some(PathBuf::from(std::str::from_utf8(&out).ok()?.trim()))
-}
-
-/// Try to find the project root finding the outmost Cargo.toml
-/// TODO: Check if this is ever called
-fn find_by_path(mut dir: PathBuf) -> Option<PathBuf> {
-    let mut best_match = None;
-    loop {
-        let Ok(read) = dir.read_dir() else {
-            break;
-        };
-        for entry in read {
-            let Ok(entry) = entry else { continue };
-            if entry.file_name() == "Cargo.toml" {
-                best_match = Some(entry.path());
-            }
-        }
-        if !dir.pop() {
-            break;
-        }
-    }
-    best_match
 }
 
 /// Get the manifest from the project directory. This is **not** the directory
@@ -75,26 +54,14 @@ fn manifest() -> PathBuf {
     );
     dir.pop();
 
-    // Try to find the project first with cargo
-    if let Some(dir) = find_with_cargo(&dir) {
-        return dir;
-    }
-
-    // If it doesn't work, try to find a Cargo.toml
-    find_by_path(dir).expect(
+    // Try to find the project with cargo
+    find_with_cargo(&dir).expect(
         "Error determining the cargo root manifest.\n\
          Please set `SYSTEM_DEPS_MANIFEST` to the path of your project's Cargo.toml",
     )
 }
 
-/// Directory where system-deps related build products will be stored.
-/// Notably, binary outputs are located here.
-fn target_dir() -> String {
-    println!("cargo:rerun-if-env-changed={}", TARGET_VAR);
-    env::var(TARGET_VAR).or(env::var("OUT_DIR")).unwrap()
-}
-
-/// This will set compile time values for the manifest and target paths.
+/// Set compile time values for the manifest and target paths, and the compile target.
 /// Calculating this in a build script is necessary so that they are only calculated
 /// once and every invocation of `system-deps` references the same metadata.
 pub fn main() {
@@ -102,7 +69,8 @@ pub fn main() {
     println!("cargo:rerun-if-changed={}", manifest.display());
     println!("cargo:rustc-env=BUILD_MANIFEST={}", manifest.display());
 
-    let target_dir = target_dir();
+    let target_dir = env::var(TARGET_VAR).or(env::var("OUT_DIR")).unwrap();
+    println!("cargo:rerun-if-env-changed={}", TARGET_VAR);
     println!("cargo:rustc-env=BUILD_TARGET_DIR={}", target_dir);
 
     println!(
