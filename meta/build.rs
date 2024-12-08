@@ -50,7 +50,7 @@ fn find_by_path(mut dir: PathBuf) -> Option<PathBuf> {
 /// Get the manifest from the project directory. This is **not** the directory
 /// where `system-deps` is cloned, it should point to the top level `Cargo.toml`
 /// file. This is needed to obtain metadata from all of dependencies, including
-/// those upstream of the package being compiled.
+/// those downstream of the package being compiled.
 ///
 /// If the target directory is not a subfolder of the project it will not be
 /// possible to detect it automatically. In this case, the user will be asked
@@ -104,4 +104,9 @@ pub fn main() {
 
     let target_dir = target_dir();
     println!("cargo:rustc-env=BUILD_TARGET_DIR={}", target_dir);
+
+    println!(
+        "cargo:rustc-env=TARGET={}",
+        std::env::var("TARGET").unwrap()
+    );
 }
