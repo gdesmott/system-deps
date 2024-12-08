@@ -276,10 +276,6 @@
 #![deny(missing_docs)]
 
 #[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
-
-#[cfg(test)]
 mod test;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
@@ -295,9 +291,6 @@ use std::str::FromStr;
 
 mod metadata;
 use metadata::MetaData;
-
-#[cfg(feature = "binary")]
-include!(env!("BINARY_CONFIG"));
 
 /// system-deps errors
 #[derive(Debug)]
@@ -635,6 +628,7 @@ enum EnvVariable {
     BuildInternal(Option<String>),
     Link(Option<String>),
     LinkerArgs(String),
+    NoBinary(Option<String>),
 }
 
 impl EnvVariable {
@@ -674,6 +668,10 @@ impl EnvVariable {
         Self::Link(lib.map(|l| l.to_string()))
     }
 
+    fn new_no_binary(lib: Option<&str>) -> Self {
+        Self::NoBinary(lib.map(|l| l.to_string()))
+    }
+
     fn suffix(&self) -> &'static str {
         match self {
             EnvVariable::Lib(_) => "LIB",
@@ -685,6 +683,7 @@ impl EnvVariable {
             EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
             EnvVariable::Link(_) => "LINK",
             EnvVariable::LinkerArgs(_) => "LDFLAGS",
+            EnvVariable::NoBinary(_) => "NO_BINARY",
         }
     }
 
@@ -702,6 +701,7 @@ impl EnvVariable {
         add_to_flags(flags, EnvVariable::new_no_pkg_config(name));
         add_to_flags(flags, EnvVariable::new_build_internal(Some(name)));
         add_to_flags(flags, EnvVariable::new_link(Some(name)));
+        add_to_flags(flags, EnvVariable::new_no_binary(Some(name)));
     }
 }
 
@@ -716,10 +716,13 @@ impl fmt::Display for EnvVariable {
             | EnvVariable::LinkerArgs(lib)
             | EnvVariable::NoPkgConfig(lib)
             | EnvVariable::BuildInternal(Some(lib))
-            | EnvVariable::Link(Some(lib)) => {
+            | EnvVariable::Link(Some(lib))
+            | EnvVariable::NoBinary(Some(lib)) => {
                 format!("{}_{}", lib.to_shouty_snake_case(), self.suffix())
             }
-            EnvVariable::BuildInternal(None) | EnvVariable::Link(None) => self.suffix().to_string(),
+            EnvVariable::BuildInternal(None)
+            | EnvVariable::Link(None)
+            | EnvVariable::NoBinary(None) => self.suffix().to_string(),
         };
         write!(f, "SYSTEM_DEPS_{}", suffix)
     }
@@ -882,12 +885,6 @@ impl Config {
             let name = &dep.key;
             let build_internal = self.get_build_internal_status(name)?;
 
-            // Is there an overrided pkg-config path for the library?
-            #[cfg(not(feature = "binary"))]
-            let pkg_config_paths: [&str; 0] = [];
-            #[cfg(feature = "binary")]
-            let pkg_config_paths = [get_path(name.as_str()), get_path("")].concat();
-
             // should the lib be statically linked?
             let statik = cfg!(feature = "binary")
                 || self
@@ -907,9 +904,40 @@ impl Config {
                     .range_version(metadata::parse_version(version))
                     .statik(statik);
 
-                let probe = Library::wrap_pkg_config(&pkg_config_paths, || {
-                    Self::probe_with_fallback(&config, lib_name, fallback_lib_names)
-                });
+                #[cfg(not(feature = "binary"))]
+                let probe = Self::probe_with_fallback(&config, lib_name, fallback_lib_names);
+
+                #[cfg(feature = "binary")]
+                let probe = {
+                    use system_deps_meta::{
+                        binary::BinaryMetadataListExt, parse::MetadataList, BUILD_MANIFEST,
+                    };
+
+                    let manifest = PathBuf::from(
+                        self.env
+                            .get("CARGO_MANIFEST_DIR")
+                            .unwrap_or(BUILD_MANIFEST.into()),
+                    )
+                    .join("Cargo.toml");
+
+                    let disable_binary = self
+                        .env
+                        .get(&EnvVariable::new_no_binary(Some(name)))
+                        .or(self.env.get(&EnvVariable::new_no_binary(None)))
+                        .is_some();
+
+                    let paths = if disable_binary {
+                        vec![]
+                    } else {
+                        MetadataList::from(&manifest, "system-deps")
+                            .paths(name)
+                            .unwrap()
+                    };
+
+                    Library::wrap_pkg_config(&paths, || {
+                        Self::probe_with_fallback(&config, lib_name, fallback_lib_names)
+                    })
+                };
 
                 match probe {
                     Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
@@ -1189,7 +1217,7 @@ impl Library {
     /// Calls a function changing the environment so that `pkg-config` will try to
     /// look first in the provided path.
     pub fn wrap_pkg_config<T, R>(
-        pkg_config_paths: impl PathOrSlice<T>,
+        pkg_config_paths: impl PathOrList<T>,
         f: impl FnOnce() -> Result<R, pkg_config::Error>,
     ) -> Result<R, pkg_config::Error> {
         // Save current PKG_CONFIG_PATH, so we can restore it
@@ -1231,7 +1259,7 @@ impl Library {
     /// });
     /// ```
     pub fn from_internal_pkg_config<T>(
-        pkg_config_paths: impl PathOrSlice<T>,
+        pkg_config_paths: impl PathOrList<T>,
         lib: &str,
         version: &str,
     ) -> Result<Self, BuildInternalClosureError> {
@@ -1253,26 +1281,28 @@ impl Library {
 /// A trait that can represent both a reference to a Path like object or a list of paths.
 /// Used in `Library::wrap_pkg_config` and `Library::from_internal_pkg_config` to specify
 /// the list of `pkg-config` paths that should take priority.
-pub trait PathOrSlice<T> {
+pub trait PathOrList<T> {
     /// Creates an string of paths appropiately joined for an environment variable.
     /// The paths in `self` will go before the paths in `other`.
-    fn join_paths(self, other: &[PathBuf]) -> OsString;
+    fn join_paths(self, other: impl AsRef<[PathBuf]>) -> OsString;
 }
 
-impl<T: AsRef<OsStr>> PathOrSlice<T> for T {
-    fn join_paths(self, other: &[PathBuf]) -> OsString {
-        env::join_paths(iter::once(self.as_ref()).chain(other.iter().map(|p| p.as_os_str())))
-            .unwrap()
+impl<T: AsRef<OsStr>> PathOrList<T> for T {
+    fn join_paths(self, other: impl AsRef<[PathBuf]>) -> OsString {
+        env::join_paths(
+            iter::once(self.as_ref()).chain(other.as_ref().iter().map(|p| p.as_os_str())),
+        )
+        .unwrap()
     }
 }
 
-impl<T: AsRef<OsStr>, S: Borrow<[T]>> PathOrSlice<(T, S)> for &S {
-    fn join_paths(self, other: &[PathBuf]) -> OsString {
+impl<T: AsRef<OsStr>, S: Borrow<[T]>> PathOrList<(T, S)> for &S {
+    fn join_paths(self, other: impl AsRef<[PathBuf]>) -> OsString {
         env::join_paths(
             self.borrow()
                 .iter()
                 .map(|p| p.as_ref())
-                .chain(other.iter().map(|p| p.as_os_str())),
+                .chain(other.as_ref().iter().map(|p| p.as_os_str())),
         )
         .unwrap()
     }

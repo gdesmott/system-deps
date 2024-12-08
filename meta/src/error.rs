@@ -7,6 +7,7 @@ pub enum Error {
     BinaryError(BinaryError),
     CfgError(CfgError),
     IncompatibleMerge,
+    MergeBase(serde_json::Value),
     PackageNotFound(String),
     SerializationError(serde_json::Error),
 }
@@ -61,6 +62,7 @@ mod binary {
         DownloadError(reqwest::Error),
         DirectoryIsFile(String),
         InvalidDirectory(io::Error),
+        InvalidFollows(String, String),
         LocalFileError(io::Error),
         SymlinkError(io::Error),
         UnsupportedExtension(String),
@@ -81,6 +83,9 @@ mod binary {
                 Self::DirectoryIsFile(dir) => write!(f, "The target directory is a file {}", dir),
                 Self::InvalidDirectory(e) => {
                     write!(f, "The binary directory is not valid: {:?}", e)
+                }
+                Self::InvalidFollows(from, to) => {
+                    write!(f, "The package {} follows {} which is invalid", from, to)
                 }
                 Self::LocalFileError(e) => {
                     write!(f, "Error reading the local binary file: {:?}", e)

@@ -7,7 +7,7 @@ use cargo_metadata::{DependencyKind, MetadataCommand};
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{from_value, Value};
 
-use crate::error::Error;
+use crate::{error::Error, utils::merge_base};
 
 /// Stores a section of metadata found in one package.
 #[derive(Debug, Default, Serialize)]
@@ -132,18 +132,10 @@ impl MetadataList {
     /// and whether it should allow the second value to overwrite the first. When traveling up the tree
     /// this is true since we want dependent crates to have priority, but when comparing horizontally
     /// it is false to avoid conflicts.
-    ///
-    /// `reduce` will take the output of merge and apply rules to modify the returned structure.
-    /// For example, checking cfg conditions and library versions.
-    pub fn get<
-        T: DeserializeOwned,
-        M: Fn(Value, &Value, bool) -> Result<Value, Error>,
-        R: Fn(Value, &M) -> Result<Value, Error>,
-    >(
+    pub fn get<T: DeserializeOwned>(
         &self,
         package: &str,
-        merge: M,
-        reduce: R,
+        merge: impl Fn(Value, Value, bool) -> Result<Value, Error>,
     ) -> Result<T, Error> {
         let base = self
             .nodes
@@ -154,30 +146,18 @@ impl MetadataList {
         let mut res = Value::Null;
         let mut curr = Value::Null;
 
-        // Merge
         while let Some(node) = nodes.pop_front() {
             for p in node.parents.iter().rev() {
                 let next = self.nodes.get(p).ok_or(Error::PackageNotFound(p.into()))?;
                 nodes.push_front(next);
             }
-            curr = merge(curr, &node.value, true)?;
+            curr = merge_base(curr, &node.value, true, &merge)?;
             if node.parents.is_empty() {
-                res = merge(res, &curr, false)?;
+                res = merge_base(res, &curr, false, &merge)?;
                 curr = Value::Null;
             }
         }
 
-        // Reduce
-        res = reduce(res, &merge)?;
-
-        // Get package
-        let Value::Object(mut map) = res else {
-            return Err(Error::IncompatibleMerge);
-        };
-        let Some(value) = map.remove(package) else {
-            return Err(Error::PackageNotFound(package.into()));
-        };
-
-        from_value::<T>(value).map_err(Error::SerializationError)
+        from_value::<T>(res).map_err(Error::SerializationError)
     }
 }

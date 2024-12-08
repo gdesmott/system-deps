@@ -1,12 +1,19 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs,
+    iter::FromIterator,
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 
 use serde::Deserialize;
+use serde_json::{Map, Value};
 
-use crate::error::BinaryError;
+use crate::{
+    error::{BinaryError, Error},
+    parse::MetadataList,
+    utils::{merge_base, merge_default},
+};
 
 /// The extension of the binary archive.
 /// Support for different extensions is enabled using features.
@@ -25,11 +32,16 @@ enum Extension {
     // Pkg,
 }
 
-// TODO: Change follow and global for includes
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum Binary {
+    Follow(FollowBinary),
+    Url(UrlBinary),
+}
 
 /// Represents one location from where to download library binaries.
 #[derive(Debug, Deserialize)]
-pub struct Binary {
+pub struct UrlBinary {
     /// The url from which to download the archived binaries. It suppports:
     ///
     /// - Web urls, in the form `http[s]://website/archive.ext`.
@@ -47,133 +59,76 @@ pub struct Binary {
     /// A list of relative paths inside the binary archive that point to a folder containing
     /// package config files. These directories will be prepended to the `PKG_CONFIG_PATH` when
     /// compiling the affected libraries.
-    pkg_paths: Vec<String>,
-
-    /// Controls if the paths from this binary apply to all packages or just to this one.
-    global: Option<bool>,
-    /// The `system-deps` formatted name of another library which has binaries specified.
-    /// This library will alias the configuration of the followed one. If `url` is specified
-    /// alongside this field, it will no longer follow the original configuration.
-    _follows: Option<String>,
+    paths: Option<Vec<String>>,
 }
 
-impl Binary {
-    pub fn paths(&self, name: &str) -> Result<HashSet<PathBuf>, BinaryError> {
-        // TODO: Set this binary to follow
-        //if let Some(follows) = self.follows {
-        //    follow_list.insert(name.clone(), follows);
-        //}
+#[derive(Debug, Deserialize)]
+pub struct FollowBinary {
+    follows: String,
+}
 
+pub trait BinaryMetadataListExt {
+    fn paths(&self, package: &str) -> Result<Vec<PathBuf>, Error>;
+}
+
+impl BinaryMetadataListExt for MetadataList {
+    fn paths(&self, package: &str) -> Result<Vec<PathBuf>, Error> {
         // The binaries are stored in the target dir set by `system_deps_meta`.
+
         // If they are specific to a dependency, they live in a subfolder.
-        let mut dst = PathBuf::from(&crate::BUILD_TARGET_DIR);
-        if !name.is_empty() {
-            dst.push(name);
+        let binary_list: HashMap<String, Binary> = self.get(package, merge_binary)?;
+        let binary = binary_list
+            .get(package)
+            .ok_or(Error::PackageNotFound(package.into()))?;
+
+        // Point binaries that follow an url to the original paths
+        let (binary, name) = match binary {
+            Binary::Url(ref bin) => (bin, package),
+            Binary::Follow(bin) => {
+                let Some(Binary::Url(follows)) = binary_list.get(&bin.follows) else {
+                    return Err(
+                        BinaryError::InvalidFollows(package.into(), bin.follows.clone()).into(),
+                    );
+                };
+                (follows, bin.follows.as_str())
+            }
         };
 
         // Only download the binaries if there isn't already a valid copy
-        if !check_valid_dir(&dst, self.checksum.as_deref())? {
-            download(&self.url, &dst)?;
+        let dst = Path::new(&crate::BUILD_TARGET_DIR).join(name);
+        if !check_valid_dir(&dst, binary.checksum.as_deref())? {
+            download(&binary.url, &dst)?;
         }
 
-        Ok(self.pkg_paths.iter().map(|p| dst.join(p)).collect())
-    }
-
-    pub fn is_global(&self) -> bool {
-        self.global.unwrap_or_default()
+        Ok(binary.paths.iter().flatten().map(|p| dst.join(p)).collect())
     }
 }
 
-#[derive(Debug)]
-pub struct BinaryPaths(HashMap<String, Vec<PathBuf>>);
-
-impl<I: IntoIterator<Item = (String, Binary)>> From<I> for BinaryPaths {
-    /// Uses the metadata from the cargo manifests and the environment to build a list of urls
-    /// from where to download binaries for dependencies and adds them to their `PKG_CONFIG_PATH`.
-    fn from(binaries: I) -> Self {
-        let mut paths: HashMap<String, Vec<PathBuf>> = HashMap::new();
-
-        for (name, bin) in binaries {
-            let p = bin.paths(&name).unwrap();
-            if bin.is_global() {
-                paths
-                    .entry("".into())
-                    .or_default()
-                    .extend(p.iter().cloned())
-            }
-            paths.entry(name).or_default().extend(p.into_iter());
-        }
-
-        Self(paths)
-    }
-}
-
-impl BinaryPaths {
-    pub fn build(self) -> String {
-        let options = self
-            .0
-            .into_iter()
-            .map(|(name, paths)| format!(r#""{}" => &{:?},"#, name, paths))
-            .collect::<Vec<_>>()
-            .join("\n        ");
-
-        format!(
-            r#"
-/// TODO: 
-pub fn get_path(name: &str) -> &[&'static str] {{
-    match name {{
-        {}
-        _ => &[],
-    }}
-}}
-"#,
-            options
-        )
-    }
-
-    // Global overrides from environment
-    // TODO: Change this so the env set global url always is first in the list of paths
-    //if let Some(url) = env("SYSTEM_DEPS_BINARY_URL") {
-    //    let checksum = env("SYSTEM_DEPS_BINARY_CHECKSUM");
-    //    let pkg_paths = env("SYSTEM_DEPS_BINARY_PKG_PATHS");
-    //    binaries.insert(
-    //        ".from_env".into(),
-    //        Binary::Url(UrlBinary {
-    //            url,
-    //            checksum,
-    //            pkg_paths: pkg_paths
-    //                .map(|p| {
-    //                    std::env::split_paths(&p)
-    //                        .map(|v| {
-    //                            v.to_str()
-    //                                .expect("Error with global binary package path")
-    //                                .to_string()
-    //                        })
-    //                        .collect()
-    //                })
-    //                .unwrap_or_default(),
-    //            global: Some(true),
-    //        }),
-    //    );
-    //}
-
-    // Go through the list of follows and if they don't already have binaries,
-    // link them to the followed one.
-    //for (from, to) in follow_list {
-    //    if !paths.contains_key(&from) {
-    //        let followed = paths
-    //            .get(to.as_str())
-    //            .unwrap_or_else(|| {
-    //                panic!(
-    //                    "The library `{}` tried to follow `{}` but it doesn't exist",
-    //                    from, to,
-    //                )
-    //            })
-    //            .clone();
-    //        paths.insert(from, followed);
-    //    };
-    //}
-}
+// Global overrides from environment
+// TODO: Change this so the env set global url always is first in the list of paths
+//if let Some(url) = env("SYSTEM_DEPS_BINARY_URL") {
+//    let checksum = env("SYSTEM_DEPS_BINARY_CHECKSUM");
+//    let pkg_paths = env("SYSTEM_DEPS_BINARY_PKG_PATHS");
+//    binaries.insert(
+//        ".from_env".into(),
+//        Binary::Url(UrlBinary {
+//            url,
+//            checksum,
+//            pkg_paths: pkg_paths
+//                .map(|p| {
+//                    std::env::split_paths(&p)
+//                        .map(|v| {
+//                            v.to_str()
+//                                .expect("Error with global binary package path")
+//                                .to_string()
+//                        })
+//                        .collect()
+//                })
+//                .unwrap_or_default(),
+//            global: Some(true),
+//        }),
+//    );
+//}
 
 /// Checks if the target directory is valid and if binaries need to be redownloaded.
 /// On an `Ok` result, if the value is true it means that the directory is correct.
@@ -209,6 +164,8 @@ fn check_valid_dir(dst: &Path, checksum: Option<&str>) -> Result<bool, BinaryErr
 /// Retrieve a binary archive from the specified `url` and decompress it in the target directory.
 /// "Download" is used as an umbrella term, since this can also be a local file.
 fn download(url: &str, dst: &Path) -> Result<(), BinaryError> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
     let ext = match url {
         #[cfg(feature = "gz")]
         u if u.ends_with(".tar.gz") => Ok(Extension::TarGz),
@@ -234,12 +191,15 @@ fn download(url: &str, dst: &Path) -> Result<(), BinaryError> {
                 if !path.is_dir() {
                     return Err(e);
                 }
+                let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
                 if !dst.read_link().is_ok_and(|l| l == path) {
+                    if dst.is_symlink() {
+                        std::fs::remove_file(dst).map_err(BinaryError::SymlinkError)?;
+                    }
                     #[cfg(unix)]
-                    std::os::unix::fs::symlink(file_path, dst)
-                        .map_err(BinaryError::SymlinkError)?;
+                    std::os::unix::fs::symlink(path, dst).map_err(BinaryError::SymlinkError)?;
                     #[cfg(windows)]
-                    std::os::windows::fs::symlink_dir(file_path, dst)
+                    std::os::windows::fs::symlink_dir(path, dst)
                         .map_err(BinaryError::SymlinkError)?;
                 }
             }
@@ -313,4 +273,51 @@ fn decompress(file: &[u8], dst: &Path, ext: Extension) -> Result<(), BinaryError
         };
     }
     Ok(())
+}
+
+pub fn merge_binary(mut rhs: Value, mut lhs: Value, overwrite: bool) -> Result<Value, Error> {
+    let r = rhs.as_object_mut().ok_or(Error::IncompatibleMerge)?;
+    let l = lhs.as_object_mut().ok_or(Error::IncompatibleMerge)?;
+
+    if overwrite {
+        for (pkg, value) in l.iter_mut() {
+            if value.get("url").is_some() {
+                r.get_mut(pkg)
+                    .and_then(|p| p.as_object_mut())
+                    .and_then(|p| p.remove("follows"));
+            }
+            if let Some((provides, value)) = resolve_follow(pkg.clone(), value) {
+                for pkg in provides {
+                    let e = r.entry(pkg).or_insert(Value::Null);
+                    *e = merge_base(e.take(), &value, true, &merge_default)?;
+                    if let Value::Object(e) = e {
+                        e.remove("url");
+                    };
+                }
+            }
+        }
+    }
+
+    let res = merge_base(rhs, &lhs, overwrite, &merge_default)?;
+
+    let r = res.as_object().ok_or(Error::IncompatibleMerge)?;
+    for value in r.values() {
+        if value.get("url").is_some() && value.get("follows").is_some() {
+            return Err(Error::IncompatibleMerge);
+        }
+    }
+
+    Ok(res)
+}
+
+fn resolve_follow(name: String, value: &mut Value) -> Option<(Vec<String>, Value)> {
+    let provides = value.as_object_mut()?.remove("provides")?;
+    let provides = provides
+        .as_array()?
+        .iter()
+        .filter_map(|p| p.as_str().map(|s| s.to_string()))
+        .collect::<Vec<_>>();
+
+    let value = Map::from_iter([("follows".into(), Value::String(name))]);
+    Some((provides, Value::Object(value)))
 }

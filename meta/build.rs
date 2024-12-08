@@ -4,7 +4,7 @@ use std::{
 };
 
 /// Environment variable to override the top level `Cargo.toml`.
-const MANIFEST_VAR: &str = "SYSTEM_DEPS_MANIFEST";
+const MANIFEST_VAR: &str = "SYSTEM_DEPS_BUILD_MANIFEST";
 
 /// Environment variable to override the directory where `system-deps`
 /// will store build products such as binary outputs.
