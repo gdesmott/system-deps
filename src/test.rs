@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use assert_matches::assert_matches;
 
@@ -14,14 +14,12 @@ use super::{
     BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, InternalLib, Library,
 };
 
-lazy_static! {
-    static ref LOCK: Mutex<()> = Mutex::new(());
-}
+static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
     {
         // PKG_CONFIG_PATH is read by pkg-config, so we need to actually change the env
-        let _l = LOCK.lock();
+        let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
         env::set_var(
             "PKG_CONFIG_PATH",
             env::current_dir().unwrap().join("src").join("tests"),
@@ -44,6 +42,9 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
     env.iter().for_each(|(k, v)| {
         hash.insert(k, v.to_string());
     });
+
+    #[cfg(feature = "binary")]
+    hash.insert("SYSTEM_DEPS_NO_PREBUILT", "".to_string());
 
     Config::new_with_env(EnvVariables::Mock(hash))
 }
@@ -106,7 +107,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -285,6 +288,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PREBUILT
 "#,
     );
 }
@@ -313,6 +317,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PREBUILT
 "#,
     );
 
@@ -342,6 +347,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PREBUILT
 "#,
     );
 }
@@ -424,7 +430,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -465,7 +473,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -513,7 +523,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -554,7 +566,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -595,7 +609,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -641,7 +657,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 ",
     );
@@ -688,7 +706,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 ",
     );
@@ -1048,10 +1068,10 @@ fn static_one_lib() {
     .unwrap();
 
     let testdata = libraries.get_by_name("testdata").unwrap();
-    assert!(!testdata.statik);
+    assert!(testdata.statik == cfg!(feature = "binary"));
 
     let testlib = libraries.get_by_name("teststaticlib").unwrap();
-    assert!(testlib.statik);
+    assert!(testlib.statik == true);
 
     assert_flags(
         flags,
@@ -1071,6 +1091,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
@@ -1080,6 +1101,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 "#
         .to_string()
         .as_str(),
@@ -1129,7 +1151,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 ",
     );
@@ -1163,6 +1187,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
@@ -1172,6 +1197,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 "#,
     );
 }
@@ -1206,6 +1232,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
@@ -1215,6 +1242,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PREBUILT
 "#,
     );
 }
@@ -1262,7 +1290,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIBWITHRPATH_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIBWITHRPATH_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIBWITHRPATH_NO_PREBUILT
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
