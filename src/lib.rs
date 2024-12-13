@@ -202,26 +202,98 @@
 //! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
 //! Libraries can be statically linked by defining the environment variable `SYSTEM_DEPS_$NAME_LINK=static`.
 //! You can also use `SYSTEM_DEPS_LINK=static` to statically link all the libraries.
+//!
+//! The libraries specified with this option can have any form readable by `pkg-config`, and they will inherit the main libraries'
+//! binary paths if you are using them. If `pkg-config` can't find some entry, it will print a warning but the compilation won't fail.
+//!
+//! # Using prebuilt binaries
+//!
+//! Some system libraries may take too long to build or require a specific environment. `system-deps` allows to download and link against
+//! prebuilt library binaries specified in the crate metadata. To do so, you need to enable the `binary` feature and configure the library metadata.
+//!
+//! ```toml
+//! [package.metadata.system-deps.liba]
+//! name = "liba"
+//! version = "1.0"
+//! url = "https://download/liba-1.0.tar.gz"
+//! checksum = "..."
+//! pkg_paths = [ "lib/pkgconfig" ]
+//! ```
+//!
+//! The snippet above will attempt to download the archive specified in the `url` field, extract it and add the relative paths from `pkg_paths` to the
+//! `PKG_CONFIG_PATH` when looking for `liba`. This is done automatically and dependents of the library don't need to make any changes.
+//! It is recommended to have a feature in the crate's `Cargo.toml` that enables the `binary` feature in `system-deps`, instead of hard-coding it.
+//!
+//! ```toml
+//! [features]
+//! binary = [ "system-deps/binary", "system-deps/gz" ]
+//! ```
+//!
+//! As oppossed to the other metadata in `system-deps`, the metadata section can be specified anywhere in the crate tree, with entries from top level crates having priority.
+//! This allows for a crate to provide a default value for its binaries, and a dependent crate to add extra configuration.
+//!
+//! ```toml
+//! # Crate graph: user_project -> libb -> liba
+//!
+//! # libb/Cargo.toml
+//! [package.metadata.system-deps.liba]
+//! url = "https://download/custom-liba-1.0.tar.gz"
+//!
+//! # user_project/Cargo.toml
+//! [package.metadata.system-deps.liba]
+//! url = "file:///tmp/liba"
+//! ```
+//!
+//! In this example, `libb` overwrites the binaries provided by `liba` (for compatibility reasons, to add flags needed by `libb`, to use a single package for both...).
+//! However, the user project overwrites them again to point at a local file for development.
+//!
+//! The binaries can be configured per target (TODO: per version) like other `system-deps` options:
+//!
+//! ```toml
+//! [package.metadata.system-deps.liba.'cfg(target = "unix")']
+//! url = "https://download/liba-unix-1.0.tar.gz"
+//!
+//! [package.metadata.system-deps.liba.'cfg(target = "windows")']
+//! url = "https://download/liba-windows-1.0.zip"
+//! ```
+//!
+//! By default, a binary archive adds its paths to `PKG_CONFIG_PATH` only for the library it is defined for. However, sometimes you may want to share a single url
+//! for multiple libraries. While it is possible to repeat the url for every entry, a more concise approach is to use `follows` to copy the configuration from another library.
+//! If one binary is meant to be used everywhere, set the `global` (the ordering of multiple global binary sources is not guaranteed).
+//!
+//! ```toml
+//! [package.metadata.system-deps.libb]
+//! follows = "liba" # This name corresponds to the key of the metadata table
+//!
+//! [package.metadata.system-deps.libc]
+//! url = "file:///tmp/liba.tar.xz"
+//! global = true
+//! ```
+//!
+//! Additionally, the environment variables `SYSTEM_DEPS_BINARY_URL`, `SYSTEM_DEPS_BINARY_CHECKSUM` and `SYSTEM_DEPS_BINARY_PKG_PATHS` can be used to set a single
+//! global binary url (for example, for local testing).
 
 #![deny(missing_docs)]
-
-#[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
 
 #[cfg(test)]
 mod test;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::env;
+use std::ffi::OsString;
 use std::fmt;
+use std::iter;
 use std::ops::RangeBounds;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 mod metadata;
 use metadata::MetaData;
+
+#[cfg(all(test, feature = "binary"))]
+mod test_binary;
 
 /// system-deps errors
 #[derive(Debug)]
@@ -559,6 +631,7 @@ enum EnvVariable {
     BuildInternal(Option<String>),
     Link(Option<String>),
     LinkerArgs(String),
+    NoPrebuilt(Option<String>),
 }
 
 impl EnvVariable {
@@ -598,6 +671,10 @@ impl EnvVariable {
         Self::Link(lib.map(|l| l.to_string()))
     }
 
+    fn new_no_prebuilt(lib: Option<&str>) -> Self {
+        Self::NoPrebuilt(lib.map(|l| l.to_string()))
+    }
+
     fn suffix(&self) -> &'static str {
         match self {
             EnvVariable::Lib(_) => "LIB",
@@ -609,6 +686,7 @@ impl EnvVariable {
             EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
             EnvVariable::Link(_) => "LINK",
             EnvVariable::LinkerArgs(_) => "LDFLAGS",
+            EnvVariable::NoPrebuilt(_) => "NO_PREBUILT",
         }
     }
 
@@ -626,6 +704,7 @@ impl EnvVariable {
         add_to_flags(flags, EnvVariable::new_no_pkg_config(name));
         add_to_flags(flags, EnvVariable::new_build_internal(Some(name)));
         add_to_flags(flags, EnvVariable::new_link(Some(name)));
+        add_to_flags(flags, EnvVariable::new_no_prebuilt(Some(name)));
     }
 }
 
@@ -640,10 +719,13 @@ impl fmt::Display for EnvVariable {
             | EnvVariable::LinkerArgs(lib)
             | EnvVariable::NoPkgConfig(lib)
             | EnvVariable::BuildInternal(Some(lib))
-            | EnvVariable::Link(Some(lib)) => {
+            | EnvVariable::Link(Some(lib))
+            | EnvVariable::NoPrebuilt(Some(lib)) => {
                 format!("{}_{}", lib.to_shouty_snake_case(), self.suffix())
             }
-            EnvVariable::BuildInternal(None) | EnvVariable::Link(None) => self.suffix().to_string(),
+            EnvVariable::BuildInternal(None)
+            | EnvVariable::Link(None)
+            | EnvVariable::NoPrebuilt(None) => self.suffix().to_string(),
         };
         write!(f, "SYSTEM_DEPS_{}", suffix)
     }
@@ -656,6 +738,8 @@ type FnBuildInternal =
 pub struct Config {
     env: EnvVariables,
     build_internals: HashMap<String, Box<FnBuildInternal>>,
+    #[cfg(feature = "binary")]
+    paths: &'static system_deps_meta::binary::Paths,
 }
 
 impl Default for Config {
@@ -674,6 +758,17 @@ impl Config {
         Self {
             env,
             build_internals: HashMap::new(),
+            #[cfg(feature = "binary")]
+            paths: {
+                // Constructed by reading the serialized value saved by the build script
+                const CONTENT: &str = include_str!(env!("BINARY_PATHS"));
+                static PATHS: std::sync::OnceLock<system_deps_meta::binary::Paths> =
+                    std::sync::OnceLock::new();
+                PATHS.get_or_init(|| {
+                    toml::from_str(CONTENT)
+                        .expect("The build script should output valid serialization")
+                })
+            },
         }
     }
 
@@ -707,23 +802,32 @@ impl Config {
     /// * `func`: closure called when internally building the library.
     ///
     /// It receives as argument the library name, and the minimum version required.
-    pub fn add_build_internal<F>(self, name: &str, func: F) -> Self
+    pub fn add_build_internal<F>(mut self, name: &str, func: F) -> Self
     where
         F: 'static + FnOnce(&str, &str) -> std::result::Result<Library, BuildInternalClosureError>,
     {
         let mut build_internals = self.build_internals;
         build_internals.insert(name.to_string(), Box::new(func));
 
-        Self {
-            env: self.env,
-            build_internals,
-        }
+        self.build_internals = build_internals;
+        self
+    }
+
+    /// Checks the map from packages to their provided prebuilt binaries locations, if available.
+    pub fn query_path(&self, _pkg: &str) -> Option<&'static Vec<PathBuf>> {
+        #[cfg(not(feature = "binary"))]
+        return None;
+
+        #[cfg(feature = "binary")]
+        self.env
+            .get(&EnvVariable::new_no_prebuilt(Some(_pkg)))
+            .or(self.env.get(&EnvVariable::new_no_prebuilt(None)))
+            .map_or_else(|| self.paths.get(_pkg), |_| None)
     }
 
     fn probe_full(mut self) -> Result<Dependencies, Error> {
         let mut libraries = self.probe_pkg_config()?;
         libraries.override_from_flags(&self.env);
-
         Ok(libraries)
     }
 
@@ -738,7 +842,6 @@ impl Config {
         println!("cargo:rerun-if-changed={}", &path.to_string_lossy());
 
         let metadata = MetaData::from_file(&path)?;
-
         let mut libraries = Dependencies::default();
 
         for dep in metadata.deps.iter() {
@@ -810,10 +913,14 @@ impl Config {
             let name = &dep.key;
             let build_internal = self.get_build_internal_status(name)?;
 
+            // Is there an overrided pkg-config path for the library?
+            let pkg_config_paths = self.query_path(name);
+
             // should the lib be statically linked?
-            let statik = self
-                .env
-                .has_value(&EnvVariable::new_link(Some(name)), "static")
+            let statik = cfg!(feature = "binary")
+                || self
+                    .env
+                    .has_value(&EnvVariable::new_link(Some(name)), "static")
                 || self.env.has_value(&EnvVariable::new_link(None), "static");
 
             let mut library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
@@ -828,7 +935,11 @@ impl Config {
                     .range_version(metadata::parse_version(version))
                     .statik(statik);
 
-                match Self::probe_with_fallback(config, lib_name, fallback_lib_names) {
+                let probe = Library::wrap_pkg_config(pkg_config_paths, || {
+                    Self::probe_with_fallback(&config, lib_name, fallback_lib_names)
+                });
+
+                match probe {
                     Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
                     Err(e) => {
                         if build_internal == BuildInternal::Auto {
@@ -848,11 +959,12 @@ impl Config {
 
             libraries.add(name, library);
         }
+
         Ok(libraries)
     }
 
     fn probe_with_fallback<'a>(
-        config: pkg_config::Config,
+        config: &'a pkg_config::Config,
         name: &'a str,
         fallback_names: &'a [String],
     ) -> Result<(&'a str, pkg_config::Library), pkg_config::Error> {
@@ -1102,6 +1214,28 @@ impl Library {
         }
     }
 
+    /// Calls a function changing the environment so that `pkg-config` will try to
+    /// look first in the provided path.
+    pub fn wrap_pkg_config<T, R>(
+        pkg_config_paths: impl PathOrList<T>,
+        f: impl FnOnce() -> Result<R, pkg_config::Error>,
+    ) -> Result<R, pkg_config::Error> {
+        // Save current PKG_CONFIG_PATH, so we can restore it
+        let prev = env::var("PKG_CONFIG_PATH").ok();
+
+        let prev_paths = prev.iter().flat_map(env::split_paths).collect::<Vec<_>>();
+        let joined_paths = pkg_config_paths.join_paths(prev_paths.as_slice());
+        env::set_var("PKG_CONFIG_PATH", joined_paths);
+
+        let res = f();
+
+        if let Some(prev) = prev {
+            env::set_var("PKG_CONFIG_PATH", prev);
+        }
+
+        res
+    }
+
     /// Create a `Library` by probing `pkg-config` on an internal directory.
     /// This helper is meant to be used by `Config::add_build_internal` closures
     /// after having built the lib to return the library information to system-deps.
@@ -1124,43 +1258,55 @@ impl Library {
     ///       lib, "1.2.4")
     /// });
     /// ```
-    pub fn from_internal_pkg_config<P>(
-        pkg_config_dir: P,
+    pub fn from_internal_pkg_config<T>(
+        pkg_config_paths: impl PathOrList<T>,
         lib: &str,
         version: &str,
-    ) -> Result<Self, BuildInternalClosureError>
-    where
-        P: AsRef<Path>,
-    {
-        // save current PKG_CONFIG_PATH, so we can restore it
-        let old = env::var("PKG_CONFIG_PATH");
+    ) -> Result<Self, BuildInternalClosureError> {
+        let pkg_lib = Self::wrap_pkg_config(pkg_config_paths, || {
+            pkg_config::Config::new()
+                .atleast_version(version)
+                .print_system_libs(false)
+                .cargo_metadata(false)
+                .statik(true)
+                .probe(lib)
+        })?;
 
-        match old {
-            Ok(ref s) => {
-                let mut paths = env::split_paths(s).collect::<Vec<_>>();
-                paths.push(PathBuf::from(pkg_config_dir.as_ref()));
-                let paths = env::join_paths(paths).unwrap();
-                env::set_var("PKG_CONFIG_PATH", paths)
-            }
-            Err(_) => env::set_var("PKG_CONFIG_PATH", pkg_config_dir.as_ref()),
-        }
+        let mut lib = Self::from_pkg_config(lib, pkg_lib);
+        lib.statik = true;
+        Ok(lib)
+    }
+}
 
-        let pkg_lib = pkg_config::Config::new()
-            .atleast_version(version)
-            .print_system_libs(false)
-            .cargo_metadata(false)
-            .statik(true)
-            .probe(lib);
+/// A trait that can represent both a reference to a Path like object or a list of paths.
+/// Used in `Library::wrap_pkg_config` and `Library::from_internal_pkg_config` to specify
+/// the list of `pkg-config` paths that should take priority.
+pub trait PathOrList<T> {
+    /// Creates an string of paths appropiately joined for an environment variable.
+    /// The paths in `self` will go before the paths in `other`.
+    fn join_paths(&self, other: impl AsRef<[PathBuf]>) -> OsString;
+}
 
-        env::set_var("PKG_CONFIG_PATH", old.unwrap_or_else(|_| "".into()));
+impl<T: AsRef<Path>> PathOrList<T> for T {
+    fn join_paths(&self, other: impl AsRef<[PathBuf]>) -> OsString {
+        let other = other.as_ref().iter().map(|p| p.as_path());
+        env::join_paths(iter::once(self.as_ref()).chain(other)).unwrap()
+    }
+}
 
-        match pkg_lib {
-            Ok(pkg_lib) => {
-                let mut lib = Self::from_pkg_config(lib, pkg_lib);
-                lib.statik = true;
-                Ok(lib)
-            }
-            Err(e) => Err(e.into()),
+impl<T: AsRef<Path>, S: Borrow<[T]>> PathOrList<(T, S)> for &S {
+    fn join_paths(&self, other: impl AsRef<[PathBuf]>) -> OsString {
+        let slice: &[T] = (*self).borrow();
+        let other = other.as_ref().iter().map(|p| p.as_path());
+        env::join_paths(slice.iter().map(|p| p.as_ref()).chain(other)).unwrap()
+    }
+}
+
+impl<T: PathOrList<S>, S> PathOrList<(T, S)> for Option<T> {
+    fn join_paths(&self, other: impl AsRef<[PathBuf]>) -> OsString {
+        match self {
+            Some(s) => s.join_paths(other),
+            None => env::join_paths(other.as_ref().iter().map(|p| p.as_os_str())).unwrap(),
         }
     }
 }

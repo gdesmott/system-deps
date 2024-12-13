@@ -4,6 +4,9 @@ pub mod error;
 pub mod parse;
 pub mod utils;
 
+#[cfg(feature = "binary")]
+pub mod binary;
+
 #[cfg(any(test, feature = "test"))]
 pub mod test;
 

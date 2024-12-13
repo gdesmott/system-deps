@@ -148,7 +148,6 @@ pub fn read_metadata(
                 return Err(Error::PackageNotFound(p.into()));
             };
             let next = if parent.children.checked_sub(1).is_some() {
-                println!("cargo:warning=clone");
                 parent.clone()
             } else {
                 nodes.remove(p.as_str()).expect("Already checked")

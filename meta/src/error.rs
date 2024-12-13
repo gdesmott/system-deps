@@ -3,6 +3,9 @@ use std::fmt;
 /// Metadata parsing errors.
 #[derive(Debug)]
 pub enum Error {
+    /// Nested error for binary specific features.
+    #[cfg(feature = "binary")]
+    Binary(BinaryError),
     /// The toml object guarded by the cfg() expression is too shallow.
     CfgNotObject(String),
     /// Error while deserializing metadata.
@@ -45,6 +48,86 @@ impl fmt::Display for Error {
                 write!(f, "Unsupported cfg() expression: {}", s)
             }
             e => e.fmt(f),
+        }
+    }
+}
+
+#[cfg(feature = "binary")]
+pub use binary::BinaryError;
+#[cfg(feature = "binary")]
+mod binary {
+    use std::{fmt, io};
+
+    /// Binary related errors.
+    #[derive(Debug)]
+    pub enum BinaryError {
+        /// Error while decompressing the packaged files.
+        DecompressError(io::Error),
+        /// The directory where the binaries should be saved already exists and is a file.
+        DirectoryIsFile(String),
+        /// Error while downloading from the specified URL.
+        DownloadError(attohttpc::Error),
+        /// The checksum for a package is incorrect.
+        InvalidChecksum(String, String, String),
+        /// Error in the directory where the binaries should be saved.
+        InvalidDirectory(io::Error),
+        /// The followed package does not exist.
+        InvalidFollows(String, String),
+        /// Error when using a local folder as the binary source.
+        LocalFileError(io::Error),
+        /// Error when creating the symlinks to the local folder.
+        SymlinkError(io::Error),
+        /// The binary archive extension is not currently supported.
+        UnsupportedExtension(String),
+    }
+
+    impl From<BinaryError> for super::Error {
+        fn from(e: BinaryError) -> Self {
+            Self::Binary(e)
+        }
+    }
+
+    impl From<attohttpc::Error> for BinaryError {
+        fn from(e: attohttpc::Error) -> Self {
+            Self::DownloadError(e)
+        }
+    }
+
+    impl fmt::Display for BinaryError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                Self::DecompressError(e) => {
+                    write!(f, "Failed to decompress the binary archive: {}", e)
+                }
+                Self::DirectoryIsFile(s) => {
+                    write!(f, "The binary target directory is a file: {}", s)
+                }
+                Self::DownloadError(e) => write!(f, "Failed to download binary archive: {}", e),
+                Self::InvalidChecksum(p, a, b) => {
+                    write!(
+                        f,
+                        "Mismatch in the checksum of {}:\n\
+                        - Specified: {}\n\
+                        - Calculated: {}",
+                        p, a, b
+                    )
+                }
+                Self::InvalidDirectory(e) => {
+                    write!(f, "The binary target directory is not valid: {}", e)
+                }
+                Self::InvalidFollows(a, b) => {
+                    write!(f, "The package {} follows {}, which doesn't exist", a, b)
+                }
+                Self::LocalFileError(e) => {
+                    write!(f, "The requested local folder could not be read: {}", e)
+                }
+                Self::SymlinkError(e) => {
+                    write!(f, "Couldn't create symlink to local binary folder: {}", e)
+                }
+                Self::UnsupportedExtension(s) => {
+                    write!(f, "Unsupported binary extension for {}", s)
+                }
+            }
         }
     }
 }
