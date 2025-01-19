@@ -19,6 +19,7 @@ pub(crate) struct Dependency {
     pub(crate) optional: bool,
     pub(crate) cfg: Option<cfg_expr::Expression>,
     pub(crate) version_overrides: Vec<VersionOverride>,
+    pub(crate) modifier: Option<String>,
 }
 
 impl Dependency {
@@ -45,6 +46,7 @@ impl Default for Dependency {
             optional: false,
             cfg: None,
             version_overrides: Vec::new(),
+            modifier: None,
         }
     }
 }
@@ -137,6 +139,7 @@ pub(crate) struct VersionOverride {
     pub(crate) name: Option<String>,
     pub(crate) fallback_names: Option<Vec<String>>,
     pub(crate) optional: Option<bool>,
+    pub(crate) modifier: Option<String>,
 }
 
 struct VersionOverrideBuilder {
@@ -145,6 +148,7 @@ struct VersionOverrideBuilder {
     full_name: Option<String>,
     fallback_names: Option<Vec<String>>,
     optional: Option<bool>,
+    modifier: Option<String>,
 }
 
 impl VersionOverrideBuilder {
@@ -155,6 +159,7 @@ impl VersionOverrideBuilder {
             full_name: None,
             fallback_names: None,
             optional: None,
+            modifier: None,
         }
     }
 
@@ -169,6 +174,7 @@ impl VersionOverrideBuilder {
             name: self.full_name,
             fallback_names: self.fallback_names,
             optional: self.optional,
+            modifier: self.modifier,
         })
     }
 }
@@ -294,6 +300,9 @@ impl MetaData {
                 }
                 ("optional", &toml::Value::Boolean(optional)) => {
                     dep.optional = optional;
+                }
+                ("modifiers", toml::Value::String(s)) => {
+                    dep.modifier = Some(s.clone());
                 }
                 (version_feature, toml::Value::Table(version_settings))
                     if version_feature.starts_with('v') =>
@@ -482,6 +491,7 @@ mod tests {
                         name: None,
                         fallback_names: None,
                         optional: None,
+                        modifier: None,
                     }],
                     ..Default::default()
                 },]
@@ -506,6 +516,7 @@ mod tests {
                             name: None,
                             fallback_names: None,
                             optional: None,
+                            modifier: None,
                         },
                         VersionOverride {
                             key: "v6".into(),
@@ -513,6 +524,7 @@ mod tests {
                             name: None,
                             fallback_names: None,
                             optional: None,
+                            modifier: None,
                         },
                     ],
                     ..Default::default()
@@ -567,6 +579,7 @@ mod tests {
                             name: None,
                             fallback_names: None,
                             optional: None,
+                            modifier: None,
                         },
                         VersionOverride {
                             key: "v2".into(),
@@ -574,6 +587,7 @@ mod tests {
                             name: None,
                             fallback_names: Some(vec!["testlib-2.0".into()]),
                             optional: None,
+                            modifier: None,
                         },
                         VersionOverride {
                             key: "v99".into(),
@@ -581,6 +595,7 @@ mod tests {
                             name: None,
                             fallback_names: Some(vec![]),
                             optional: None,
+                            modifier: None,
                         },
                     ],
                     ..Default::default()
@@ -613,6 +628,7 @@ mod tests {
                             name: Some("testlib-5.0".into()),
                             fallback_names: None,
                             optional: Some(false),
+                            modifier: None,
                         },],
                         ..Default::default()
                     },
@@ -625,6 +641,7 @@ mod tests {
                             name: None,
                             fallback_names: None,
                             optional: Some(true),
+                            modifier: None,
                         },],
                         ..Default::default()
                     },
