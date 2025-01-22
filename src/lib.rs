@@ -427,16 +427,8 @@ impl Dependencies {
                 let is_static_lib_available = should_be_linked_statically;
 
                 let modifiers = if should_be_linked_statically {
-                    let lib_modifier = env
-                        .get(&EnvVariable::new_modifier(Some(name)))
-                        .unwrap_or_default();
-
-                    // prefer lib specific modifier if it exists, otherwise use the `SYSTEM_DEPS_MODIFIER` instead
-                    if lib_modifier.is_empty() {
-                        env.get(&EnvVariable::Modifiers(None)).unwrap_or_default()
-                    } else {
-                        lib_modifier
-                    }
+                    env.get(&EnvVariable::new_modifier(Some(name)))
+                        .unwrap_or_default()
                 } else {
                     String::new()
                 };
@@ -509,7 +501,6 @@ impl Dependencies {
             EnvVariable::new_build_internal(None),
         ));
         flags.add(BuildFlag::RerunIfEnvChanged(EnvVariable::new_link(None)));
-        flags.add(BuildFlag::RerunIfEnvChanged(EnvVariable::Modifiers(None)));
 
         for (name, _lib) in self.libs.iter() {
             EnvVariable::set_rerun_if_changed_for_all_variants(&mut flags, name);
@@ -847,19 +838,9 @@ impl Config {
 
             // does the static linked lib have any modifiers?
             let modifiers = if statik {
-                let lib_modifier = self
-                    .env
+                self.env
                     .get(&EnvVariable::new_modifier(Some(name)))
-                    .unwrap_or_default();
-
-                //prefer the lib modifier if it is specified otherwise use the `SYSTEM_DEPS` catchall
-                if lib_modifier.is_empty() {
-                    self.env
-                        .get(&EnvVariable::new_modifier(None))
-                        .unwrap_or_default()
-                } else {
-                    lib_modifier
-                }
+                    .unwrap_or_default()
             } else {
                 String::new()
             };
@@ -1226,19 +1207,9 @@ impl Library {
 
         env::set_var("PKG_CONFIG_PATH", old.unwrap_or_else(|_| "".into()));
 
-        // Get any modifiers for the lib or SYSTEM_DEPS
-        // does the static linked lib have any modifiers?
-        let modifiers = {
-            let lib_modifier =
-                env::var(EnvVariable::new_modifier(Some(lib)).to_string()).unwrap_or_default();
-
-            //prefer the lib modifier if it is specified otherwise use the `SYSTEM_DEPS` catchall
-            if lib_modifier.is_empty() {
-                env::var(EnvVariable::new_modifier(None).to_string()).unwrap_or_default()
-            } else {
-                lib_modifier
-            }
-        };
+        // Get the modifiers for the lib
+        let modifiers =
+            env::var(EnvVariable::new_modifier(Some(lib)).to_string()).unwrap_or_default();
 
         match pkg_lib {
             Ok(pkg_lib) => {
