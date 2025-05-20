@@ -176,8 +176,9 @@ fn toml_pkg_config_err_version(
                 name: _,
             } => {
                 let s = format!(">= {}", expected_version);
-                // remove trailing '"", if any
+                // remove trailing " and ', if any
                 let cmd = cmd.strip_suffix('"').unwrap_or(&cmd);
+                let cmd = cmd.strip_suffix('\'').unwrap_or(cmd);
                 assert!(cmd.ends_with(&s));
             }
             _ => panic!("Wrong pkg-config error type"),
