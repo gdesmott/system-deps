@@ -791,7 +791,7 @@ impl Config {
                         .ord()
                         .expect("invalid version")
                 });
-                let highest = enabled_feature_overrides.into_iter().last().unwrap();
+                let highest = enabled_feature_overrides.into_iter().next_back().unwrap();
 
                 version = Some(highest.version.as_str());
                 lib_name = highest.name.as_deref().unwrap_or(dep.lib_name());
