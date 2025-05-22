@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.5](https://github.com/gdesmott/system-deps/compare/v7.0.4...v7.0.5) - 2025-05-22
+
+### Other
+
+- set rust-version to 1.78.0
+- allow cfg-expr between 0.17 and 0.20
+
 ## [7.0.4](https://github.com/gdesmott/system-deps/compare/v7.0.3...v7.0.4) - 2025-05-20
 
 ### Fixed
