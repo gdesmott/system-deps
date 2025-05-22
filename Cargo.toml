@@ -16,6 +16,7 @@ keywords = [
     "metadata",
 ]
 edition = "2018"
+rust-version = "1.78.0"
 documentation = "https://docs.rs/system-deps/"
 readme = "README.md"
 
