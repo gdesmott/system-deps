@@ -107,6 +107,8 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -286,6 +288,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_MODIFIER
 "#,
     );
 }
@@ -314,6 +317,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_MODIFIER
 "#,
     );
 
@@ -326,7 +330,6 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
     let testlib = libraries.get_by_name("test_lib").unwrap();
     assert_eq!(testlib.name, "testlib-2.0");
     assert_eq!(testlib.version, "2.0.0");
-
     assert_flags(
         flags,
         r#"cargo:rustc-link-search=native=/usr/lib/
@@ -343,6 +346,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TEST_LIB_MODIFIER
 "#,
     );
 }
@@ -425,7 +429,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -466,7 +472,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -484,7 +492,7 @@ fn override_lib() {
         testlib.libs,
         vec!["overridden-test", "other-test"]
             .into_iter()
-            .map(|name| InternalLib::new(name.to_string(), false))
+            .map(|name| InternalLib::new(name.to_string(), false, String::new()))
             .collect::<Vec<InternalLib>>()
     );
 
@@ -515,6 +523,8 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -555,7 +565,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -597,6 +609,8 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
@@ -642,7 +656,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 ",
     );
@@ -663,7 +679,11 @@ fn override_no_pkg_config() {
     assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
     assert_eq!(
         testlib.libs,
-        vec![InternalLib::new("custom-lib".to_string(), false)]
+        vec![InternalLib::new(
+            "custom-lib".to_string(),
+            false,
+            String::new()
+        )]
     );
     assert_eq!(testlib.frameworks, Vec::<String>::new());
     assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
@@ -689,7 +709,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 ",
     );
@@ -724,7 +746,7 @@ fn test_build_internal(
             .probe(lib)
             .unwrap();
         pkg_lib.version = version.to_string();
-        Ok(Library::from_pkg_config(lib, pkg_lib))
+        Ok(Library::from_pkg_config(lib, pkg_lib, String::new()))
     });
 
     match config.probe_full() {
@@ -836,7 +858,7 @@ fn build_internal_wrong_version() {
             .cargo_metadata(false)
             .probe(lib)
             .unwrap();
-        Ok(Library::from_pkg_config(lib, pkg_lib))
+        Ok(Library::from_pkg_config(lib, pkg_lib, String::new()))
     });
 
     let err = config.probe_full().unwrap_err();
@@ -878,7 +900,7 @@ fn build_internal_always_global() {
                 .probe(lib)
                 .unwrap();
             pkg_lib.version = version.to_string();
-            Ok(Library::from_pkg_config(lib, pkg_lib))
+            Ok(Library::from_pkg_config(lib, pkg_lib, String::new()))
         })
         .add_build_internal("testdata", move |lib, version| {
             let (a, _) = called_clone2.get();
@@ -889,7 +911,7 @@ fn build_internal_always_global() {
                 .probe(lib)
                 .unwrap();
             pkg_lib.version = version.to_string();
-            Ok(Library::from_pkg_config(lib, pkg_lib))
+            Ok(Library::from_pkg_config(lib, pkg_lib, String::new()))
         });
 
     let libraries = config.probe_full().unwrap();
@@ -920,7 +942,7 @@ fn build_internal_global_override() {
             .probe(lib)
             .unwrap();
         pkg_lib.version = version.to_string();
-        Ok(Library::from_pkg_config(lib, pkg_lib))
+        Ok(Library::from_pkg_config(lib, pkg_lib, String::new()))
     })
     .add_build_internal("testdata", move |lib, version| {
         let (a, _) = called_clone2.get();
@@ -931,7 +953,7 @@ fn build_internal_global_override() {
             .probe(lib)
             .unwrap();
         pkg_lib.version = version.to_string();
-        Ok(Library::from_pkg_config(lib, pkg_lib))
+        Ok(Library::from_pkg_config(lib, pkg_lib, String::new()))
     });
 
     let libraries = config.probe_full().unwrap();
@@ -1072,6 +1094,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
@@ -1081,6 +1104,61 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
+"#
+        .to_string()
+        .as_str(),
+    );
+}
+
+#[test]
+fn static_one_lib_with_modifier() {
+    let (libraries, flags) = toml(
+        "toml-static-mod",
+        vec![
+            ("SYSTEM_DEPS_TESTSTATICLIB_LINK", "static"),
+            ("SYSTEM_DEPS_TESTSTATICLIB_MODIFIER", "+whole-archive"),
+        ],
+    )
+    .unwrap();
+
+    let testdata = libraries.get_by_name("testdata").unwrap();
+    assert!(!testdata.statik);
+    assert_eq!(testdata.modifiers, "");
+
+    let testlib = libraries.get_by_name("teststaticlib").unwrap();
+    assert!(testlib.statik);
+    assert_eq!(testlib.modifiers, "+whole-archive");
+
+    assert_flags(
+        flags,
+        r#"cargo:rustc-link-search=native=./src/tests/lib/
+cargo:rustc-link-search=framework=./src/tests/lib/
+cargo:rustc-link-lib=static:+whole-archive=teststatic
+cargo:rustc-link-lib=framework=someframework
+cargo:include=./src/tests/include/testlib
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LDFLAGS
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_MODIFIER
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LDFLAGS
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 "#
         .to_string()
         .as_str(),
@@ -1104,11 +1182,14 @@ fn override_static_no_pkg_config() {
     assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
     assert_eq!(
         testlib.libs,
-        vec![InternalLib::new("custom-lib".to_string(), true)]
+        vec![InternalLib::new(
+            "custom-lib".to_string(),
+            true,
+            String::new()
+        )]
     );
     assert_eq!(testlib.frameworks, Vec::<String>::new());
     assert_eq!(testlib.include_paths, Vec::<PathBuf>::new());
-
     assert_flags(
         flags,
         r"cargo:rustc-link-lib=static=custom-lib
@@ -1130,7 +1211,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 ",
     );
@@ -1164,6 +1247,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTSTATICLIB_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LIB_FRAMEWORK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_SEARCH_NATIVE
@@ -1173,6 +1257,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 "#,
     );
 }
@@ -1207,6 +1292,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
@@ -1216,6 +1302,7 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LDFLAGS
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_MODIFIER
 "#,
     );
 }
@@ -1263,7 +1350,9 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIBWITHRPATH_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTDATA_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIBWITHRPATH_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIBWITHRPATH_MODIFIER
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
