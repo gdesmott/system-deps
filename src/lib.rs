@@ -257,6 +257,7 @@
 //! url = "https://download/liba-windows-1.0.zip"
 //! ```
 //!
+//! TODO: Is this still true
 //! By default, a binary archive adds its paths to `PKG_CONFIG_PATH` only for the library it is defined for. However, sometimes you may want to share a single url
 //! for multiple libraries. While it is possible to repeat the url for every entry, a more concise approach is to use `follows` to copy the configuration from another library.
 //! If one binary is meant to be used everywhere, set the `global` (the ordering of multiple global binary sources is not guaranteed).
@@ -269,6 +270,8 @@
 //! url = "file:///tmp/liba.tar.xz"
 //! global = true
 //! ```
+//!
+//! TODO: Complete examples
 //!
 //! Additionally, the environment variables `SYSTEM_DEPS_BINARY_URL`, `SYSTEM_DEPS_BINARY_CHECKSUM` and `SYSTEM_DEPS_BINARY_PKG_PATHS` can be used to set a single
 //! global binary url (for example, for local testing).
@@ -761,7 +764,7 @@ impl Config {
             #[cfg(feature = "binary")]
             paths: {
                 // Constructed by reading the serialized value saved by the build script
-                const CONTENT: &str = include_str!(env!("BINARY_PATHS"));
+                const CONTENT: &str = include_str!(env!("SYSTEM_DEPS_BINARY_PATHS"));
                 static PATHS: std::sync::OnceLock<system_deps_meta::binary::Paths> =
                     std::sync::OnceLock::new();
                 PATHS.get_or_init(|| {
@@ -914,6 +917,7 @@ impl Config {
             let build_internal = self.get_build_internal_status(name)?;
 
             // Is there an overrided pkg-config path for the library?
+            // TODO: Pass package version here
             let pkg_config_paths = self.query_path(name);
 
             // should the lib be statically linked?

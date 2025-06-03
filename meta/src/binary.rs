@@ -11,10 +11,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
 
-use crate::{
-    error::{BinaryError, Error},
-    utils::merge_default,
-};
+use crate::error::{BinaryError, Error};
 
 /// The extension of the binary archive.
 /// Support for different extensions is enabled using features.
@@ -153,7 +150,7 @@ where
                     unreachable!();
                 };
 
-                let dst = Path::new(&crate::BUILD_TARGET_DIR).join(&name);
+                let dst = Path::new(&crate::TARGET_DIR).join(&name);
                 res.paths.insert(
                     name,
                     bin.paths.iter().flatten().map(|p| dst.join(p)).collect(),
@@ -172,7 +169,7 @@ where
 
         // Check if the package provided extra configuration
         for (name, list) in res.paths.iter_mut() {
-            let dst = Path::new(&crate::BUILD_TARGET_DIR).join(name);
+            let dst = Path::new(&crate::TARGET_DIR).join(name);
             let Ok(info) = fs::read_to_string(dst.join("info.toml")) else {
                 continue;
             };
@@ -345,9 +342,9 @@ fn decompress(_file: &[u8], _dst: &Path, ext: Extension) -> Result<(), BinaryErr
     }
 }
 
-pub fn merge_binary(rhs: &mut Table, lhs: Table, overwrite: bool) -> Result<(), Error> {
+pub fn merge(rhs: &mut Table, lhs: Table, force: bool) -> Result<(), Error> {
     // Update the values for url and follows
-    if overwrite {
+    if force {
         for (key, value) in lhs.iter() {
             if value.get("url").is_some() {
                 if let Some(Value::Table(pkg)) = rhs.get_mut(key) {
@@ -370,7 +367,7 @@ pub fn merge_binary(rhs: &mut Table, lhs: Table, overwrite: bool) -> Result<(), 
     }
 
     // The regular merge
-    merge_default(rhs, lhs, overwrite)?;
+    crate::parse::merge(rhs, lhs, force)?;
 
     // Don't allow both url and follows for the same package
     for value in rhs.values() {

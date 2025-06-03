@@ -11,11 +11,11 @@ use std::{
 use toml::{Table, Value};
 
 use system_deps_meta::{
-    binary::{merge_binary, Paths},
+    binary::{merge, Paths},
     error::Error,
     parse::read_metadata,
     test::{self, assert_set, Package},
-    BUILD_MANIFEST, BUILD_TARGET_DIR,
+    BUILD_MANIFEST, TARGET_DIR,
 };
 
 use crate::{BuildInternalClosureError, Config, EnvVariables, Library};
@@ -34,7 +34,7 @@ impl Test {
         }
 
         let manifest = test::Test::write_manifest(name, packages);
-        let metadata = read_metadata(&manifest, "system-deps", merge_binary)?;
+        let metadata = read_metadata(&manifest, "system-deps", merge)?;
         let paths = metadata.into_iter().collect();
 
         Ok(Self { manifest, paths })
@@ -63,7 +63,7 @@ fn assert_paths(paths: Option<&Vec<PathBuf>>, expected: &[&str]) {
         paths.into_iter().flatten(),
         &expected
             .iter()
-            .map(|s| Path::new(BUILD_TARGET_DIR).join(s))
+            .map(|s| Path::new(TARGET_DIR).join(s))
             .collect::<Vec<_>>(),
     )
 }
@@ -586,4 +586,27 @@ fn internal_pkg_config() -> Result<(), Error> {
     assert!(matches!(lib, Err(BuildInternalClosureError::PkgConfig(_))));
 
     Ok(())
+}
+
+#[test]
+fn library_versions() -> Result<(), Error> {
+    let base_path = get_archives(None).0;
+    let pkgs = vec![Package {
+        name: "dep",
+        deps: vec![],
+        config: toml::from_str(&format!(
+            r#"
+            [package.metadata.system-deps.dep]
+            version = "1.0"
+            url = "$TEST"
+            paths = [ "lib/pkgconfig" ]
+            v2_0 = {{ version = "2.0", url = "file://{}/test.zip" }}
+        "#,
+            base_path.display()
+        ))?,
+    }];
+
+    let _test = Test::new("library_versions", pkgs)?;
+    // assert_paths(test.paths.get("dep"), &["dep/lib/pkgconfig"]);
+    todo!();
 }

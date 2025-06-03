@@ -5,18 +5,18 @@ exclude = ["target"]
 [workspace.package]
 version = "7.0.5"
 authors = [
-  "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
-  "Josh Triplett <josh@joshtriplett.org>",
+    "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
+    "Josh Triplett <josh@joshtriplett.org>",
 ]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gdesmott/system-deps"
 description = "Discover and configure system dependencies from declarative dependencies in Cargo.toml"
 keywords = [
-  "pkg-config",
-  "build-dependencies",
-  "build-depends",
-  "manifest",
-  "metadata",
+    "pkg-config",
+    "build-dependencies",
+    "build-depends",
+    "manifest",
+    "metadata",
 ]
 edition = "2018"
 rust-version = "1.78.0"
@@ -38,7 +38,7 @@ readme = "README.md"
 
 [dependencies]
 system-deps-meta = { workspace = true, optional = true }
-pkg-config = "0.3.25"
+pkg-config = "0.3"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 version-compare = "0.2"
 heck = "0.5"
@@ -56,7 +56,7 @@ tiny_http = "0.12"
 
 [features]
 default = []
-# How to do this using resolver v2? Since features are separated
+# FIXME: How can this be done when using resolver v2? Features are separated
 binary = ["system-deps-meta/binary"]
 gz = ["system-deps-meta/gz"]
 xz = ["system-deps-meta/xz"]

@@ -6,7 +6,10 @@ use std::{
 
 use toml::{Table, Value};
 
-use crate::{error::Error, parse::read_metadata, utils::merge_default};
+use crate::{
+    error::Error,
+    parse::{merge, read_metadata},
+};
 
 macro_rules! entry {
     ($table:expr, $key:expr) => {
@@ -79,7 +82,7 @@ impl Test {
 
     pub fn new(name: impl AsRef<str>, packages: Vec<Package>) -> Result<Self, Error> {
         let manifest = Self::write_manifest(name, packages);
-        let metadata = read_metadata(&manifest, "system-deps", merge_default)?;
+        let metadata = read_metadata(&manifest, "system-deps", merge)?;
         Ok(Self { manifest, metadata })
     }
 
@@ -309,7 +312,7 @@ fn virtual_workspace() -> Result<(), Error> {
     ];
     std::fs::write(&path, manifest.to_string()).expect("Failed to write manifest");
 
-    let metadata = read_metadata(&path, "system-deps", merge_default)?;
+    let metadata = read_metadata(&path, "system-deps", merge)?;
     let test = Test {
         metadata,
         manifest: path,
@@ -577,28 +580,18 @@ fn conditional_conflict() -> Result<(), Error> {
 }
 
 #[test]
-fn conditional_not_map() -> Result<(), Error> {
-    let mut pkgs = vec![Package {
+fn conditional_not_object() -> Result<(), Error> {
+    let pkgs = vec![Package {
         name: "dep",
         deps: vec![],
         config: toml::from_str(
             r#"
-            [package.metadata.system-deps.'cfg(all())']
-            dep = 1234"#,
+            [package.metadata.system-deps]
+            'cfg(all())' = 1234"#,
         )?,
     }];
 
-    let test = Test::new("conditional_not_map", pkgs.clone());
-    println!("left: {:?}", test);
-    assert!(matches!(test, Err(Error::CfgNotObject(_))));
-
-    pkgs[0].config = toml::from_str(
-        r#"
-        [package.metadata.system-deps]
-        'cfg(all())' = 1234"#,
-    )?;
-
-    let test = Test::new("conditional_not_map_ext", pkgs);
+    let test = Test::new("conditional_not_object", pkgs);
     println!("left: {:?}", test);
     assert!(matches!(test, Err(Error::CfgNotObject(_))));
 

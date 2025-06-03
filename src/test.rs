@@ -179,9 +179,8 @@ fn toml_pkg_config_err_version(
                 name: _,
             } => {
                 let s = format!(">= {}", expected_version);
-                // remove trailing " and ', if any
-                let cmd = cmd.strip_suffix('"').unwrap_or(&cmd);
-                let cmd = cmd.strip_suffix('\'').unwrap_or(cmd);
+                // Remove trailing quotes, if any
+                let cmd = cmd.trim_end_matches(['"', '\'']);
                 assert!(cmd.ends_with(&s));
             }
             _ => panic!("Wrong pkg-config error type"),
@@ -1072,7 +1071,7 @@ fn static_one_lib() {
     assert!(testdata.statik == cfg!(feature = "binary"));
 
     let testlib = libraries.get_by_name("teststaticlib").unwrap();
-    assert!(testlib.statik == true);
+    assert!(testlib.statik);
 
     assert_flags(
         flags,

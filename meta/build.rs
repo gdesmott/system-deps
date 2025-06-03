@@ -62,16 +62,17 @@ fn manifest() -> PathBuf {
 }
 
 /// Set compile time values for the manifest and target paths, and the compile target.
-/// Calculating this in a build script is necessary so that they are only calculated
+/// This step needs to happen in a build script so that the paths are only calculated
 /// once and every invocation of `system-deps` references the same metadata.
 pub fn main() {
     let manifest = manifest();
     println!("cargo:rerun-if-changed={}", manifest.display());
-    println!("cargo:rustc-env=BUILD_MANIFEST={}", manifest.display());
+    println!("cargo:rustc-env={}={}", MANIFEST_VAR, manifest.display());
 
+    // TODO: Use an user cache dir, similar to .cargo?
     let target_dir = env::var(TARGET_VAR).or(env::var("OUT_DIR")).unwrap();
     println!("cargo:rerun-if-env-changed={}", TARGET_VAR);
-    println!("cargo:rustc-env=BUILD_TARGET_DIR={}", target_dir);
+    println!("cargo:rustc-env={}={}", TARGET_VAR, target_dir);
 
     println!(
         "cargo:rustc-env=TARGET={}",
