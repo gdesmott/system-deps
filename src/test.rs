@@ -14,9 +14,7 @@ use super::{
     BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, InternalLib, Library,
 };
 
-lazy_static! {
-    static ref LOCK: Mutex<()> = Mutex::new(());
-}
+static LOCK: Mutex<()> = Mutex::new(());
 
 fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
     {
