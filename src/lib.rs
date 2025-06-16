@@ -206,10 +206,6 @@
 #![deny(missing_docs)]
 
 #[cfg(test)]
-#[macro_use]
-extern crate lazy_static;
-
-#[cfg(test)]
 mod test;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
