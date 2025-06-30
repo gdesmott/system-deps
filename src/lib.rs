@@ -273,28 +273,25 @@ impl std::error::Error for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PkgConfig(e) => write!(f, "{}", e),
-            Self::BuildInternalClosureError(s, e) => write!(f, "Failed to build {}: {}", s, e),
-            Self::FailToRead(s, _) => write!(f, "{}", s),
-            Self::InvalidMetadata(s) => write!(f, "{}", s),
+            Self::PkgConfig(e) => write!(f, "{e}"),
+            Self::BuildInternalClosureError(s, e) => write!(f, "Failed to build {s}: {e}"),
+            Self::FailToRead(s, _) => write!(f, "{s}"),
+            Self::InvalidMetadata(s) => write!(f, "{s}"),
             Self::MissingLib(s) => write!(
                 f,
                 "You should define at least one lib using {} or {}",
                 EnvVariable::new_lib(s),
                 EnvVariable::new_lib_framework(s),
             ),
-            Self::BuildInternalInvalid(s) => write!(f, "{}", s),
-            Self::BuildInternalNoClosure(s1, s2) => write!(
-                f,
-                "Missing build internal closure for {} (version {})",
-                s1, s2
-            ),
+            Self::BuildInternalInvalid(s) => write!(f, "{s}"),
+            Self::BuildInternalNoClosure(s1, s2) => {
+                write!(f, "Missing build internal closure for {s1} (version {s2})")
+            }
             Self::BuildInternalWrongVersion(s1, s2, s3) => write!(
                 f,
-                "Internally built {} {} but minimum required version is {}",
-                s1, s2, s3
+                "Internally built {s1} {s2} but minimum required version is {s3}"
             ),
-            Self::UnsupportedCfg(s) => write!(f, "Unsupported cfg() expression: {}", s),
+            Self::UnsupportedCfg(s) => write!(f, "Unsupported cfg() expression: {s}"),
         }
     }
 }
@@ -541,8 +538,8 @@ impl std::error::Error for BuildInternalClosureError {
 impl fmt::Display for BuildInternalClosureError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::PkgConfig(e) => write!(f, "{}", e),
-            Self::Failed(s) => write!(f, "{}", s),
+            Self::PkgConfig(e) => write!(f, "{e}"),
+            Self::Failed(s) => write!(f, "{s}"),
         }
     }
 }
@@ -645,7 +642,7 @@ impl fmt::Display for EnvVariable {
             }
             EnvVariable::BuildInternal(None) | EnvVariable::Link(None) => self.suffix().to_string(),
         };
-        write!(f, "SYSTEM_DEPS_{}", suffix)
+        write!(f, "SYSTEM_DEPS_{suffix}")
     }
 }
 
@@ -686,7 +683,7 @@ impl Config {
         let flags = libraries.gen_flags()?;
 
         // Output cargo flags
-        println!("{}", flags);
+        println!("{flags}");
 
         for (name, _) in libraries.iter() {
             println!("cargo:rustc-cfg=system_deps_have_{}", name.to_snake_case());
@@ -873,8 +870,7 @@ impl Config {
             Some(s) => {
                 let b = BuildInternal::from_str(s).map_err(|_| {
                     Error::BuildInternalInvalid(format!(
-                        "Invalid value in {}: {} (allowed: 'auto', 'always', 'never')",
-                        var, s
+                        "Invalid value in {var}: {s} (allowed: 'auto', 'always', 'never')"
                     ))
                 })?;
                 Ok(Some(b))
@@ -1055,7 +1051,7 @@ impl Library {
                 let mut names = vec![format!("lib{}.a", name)];
 
                 if cfg!(target_os = "windows") {
-                    names.push(format!("{}.lib", name));
+                    names.push(format!("{name}.lib"));
                 }
 
                 names
@@ -1219,18 +1215,18 @@ enum BuildFlag {
 impl fmt::Display for BuildFlag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            BuildFlag::Include(paths) => write!(f, "include={}", paths),
-            BuildFlag::SearchNative(lib) => write!(f, "rustc-link-search=native={}", lib),
-            BuildFlag::SearchFramework(lib) => write!(f, "rustc-link-search=framework={}", lib),
+            BuildFlag::Include(paths) => write!(f, "include={paths}"),
+            BuildFlag::SearchNative(lib) => write!(f, "rustc-link-search=native={lib}"),
+            BuildFlag::SearchFramework(lib) => write!(f, "rustc-link-search=framework={lib}"),
             BuildFlag::Lib(lib, statik) => {
                 if *statik {
-                    write!(f, "rustc-link-lib=static={}", lib)
+                    write!(f, "rustc-link-lib=static={lib}")
                 } else {
-                    write!(f, "rustc-link-lib={}", lib)
+                    write!(f, "rustc-link-lib={lib}")
                 }
             }
-            BuildFlag::LibFramework(lib) => write!(f, "rustc-link-lib=framework={}", lib),
-            BuildFlag::RerunIfEnvChanged(env) => write!(f, "rerun-if-env-changed={}", env),
+            BuildFlag::LibFramework(lib) => write!(f, "rustc-link-lib=framework={lib}"),
+            BuildFlag::RerunIfEnvChanged(env) => write!(f, "rerun-if-env-changed={env}"),
             BuildFlag::LinkArg(ld_option) => {
                 write!(f, "rustc-link-arg=-Wl,{}", ld_option.join(","))
             }
@@ -1254,7 +1250,7 @@ impl BuildFlags {
 impl fmt::Display for BuildFlags {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for flag in self.0.iter() {
-            writeln!(f, "cargo:{}", flag)?;
+            writeln!(f, "cargo:{flag}")?;
         }
         Ok(())
     }
@@ -1313,7 +1309,7 @@ impl std::error::Error for ParseError {}
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::VariantNotFound(v) => write!(f, "Unknown variant: `{}`", v),
+            Self::VariantNotFound(v) => write!(f, "Unknown variant: `{v}`"),
         }
     }
 }

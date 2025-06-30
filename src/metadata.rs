@@ -81,22 +81,18 @@ enum MetadataError {
 impl fmt::Display for MetadataError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::MissingKey(k) => write!(f, "missing key `{}`", k),
-            Self::NotATable(k) => write!(f, "`{}` is not a table", k),
-            Self::NestedCfg(k) => write!(f, "`{}`: cfg() cannot be nested", k),
-            Self::NotString(k) => write!(f, "`{}`: not a string", k),
-            Self::NotStringOrTable(k) => write!(f, "`{}`: not a string or a table", k),
-            Self::CfgExpr(e) => write!(f, "{}", e),
-            Self::Toml(e) => write!(f, "error parsing TOML: {}", e),
+            Self::MissingKey(k) => write!(f, "missing key `{k}`"),
+            Self::NotATable(k) => write!(f, "`{k}` is not a table"),
+            Self::NestedCfg(k) => write!(f, "`{k}`: cfg() cannot be nested"),
+            Self::NotString(k) => write!(f, "`{k}`: not a string"),
+            Self::NotStringOrTable(k) => write!(f, "`{k}`: not a string or a table"),
+            Self::CfgExpr(e) => write!(f, "{e}"),
+            Self::Toml(e) => write!(f, "error parsing TOML: {e}"),
             Self::UnexpectedVersionSetting(n, k, t) => {
-                write!(
-                    f,
-                    "{}: unexpected version settings key: {} type: {}",
-                    n, k, t
-                )
+                write!(f, "{n}: unexpected version settings key: {k} type: {t}")
             }
-            Self::UnexpectedKey(n, k, t) => write!(f, "{}: unexpected key {} type {}", n, k, t),
-            Self::VersionOverrideBuilder(e) => write!(f, "{}", e),
+            Self::UnexpectedKey(n, k, t) => write!(f, "{n}: unexpected key {k} type {t}"),
+            Self::VersionOverrideBuilder(e) => write!(f, "{e}"),
         }
     }
 }
@@ -218,14 +214,12 @@ impl MetaData {
                 if allow_cfg {
                     let cfg_exp = cfg_expr::Expression::parse(name)?;
 
-                    for mut dep in
-                        Self::parse_deps_table(value, &format!("{}.{}", key, name), false)?
-                    {
+                    for mut dep in Self::parse_deps_table(value, &format!("{key}.{name}"), false)? {
                         dep.cfg = Some(cfg_exp.clone());
                         deps.push(dep);
                     }
                 } else {
-                    return Err(MetadataError::NestedCfg(format!("{}.{}", key, name)));
+                    return Err(MetadataError::NestedCfg(format!("{key}.{name}")));
                 }
             } else {
                 let dep = Self::parse_dep(key, name, value)?;
@@ -256,7 +250,7 @@ impl MetaData {
                 Self::parse_dep_table(key, name, &mut dep, t)?;
             }
             _ => {
-                return Err(MetadataError::NotStringOrTable(format!("{}.{}", key, name)));
+                return Err(MetadataError::NotStringOrTable(format!("{key}.{name}")));
             }
         }
 
@@ -277,7 +271,7 @@ impl MetaData {
                 ("version", toml::Value::String(s)) => {
                     if !validate_version(s) {
                         return Err(MetadataError::UnexpectedVersionSetting(
-                            format!("{}.{}", p_key, name),
+                            format!("{p_key}.{name}"),
                             key.into(),
                             value.type_str().to_owned(),
                         ));
@@ -289,7 +283,7 @@ impl MetaData {
                     dep.name = Some(s.clone());
                 }
                 ("fallback-names", toml::Value::Array(values)) => {
-                    let key = format!("{}.{}", p_key, name);
+                    let key = format!("{p_key}.{name}");
                     dep.fallback_names = Some(Self::parse_name_list(&key, values)?);
                 }
                 ("optional", &toml::Value::Boolean(optional)) => {
@@ -305,7 +299,7 @@ impl MetaData {
                             ("version", toml::Value::String(feat_vers)) => {
                                 if !validate_version(feat_vers) {
                                     return Err(MetadataError::UnexpectedVersionSetting(
-                                        format!("{}.{}", p_key, name),
+                                        format!("{p_key}.{name}"),
                                         k.into(),
                                         v.type_str().to_owned(),
                                     ));
@@ -317,7 +311,7 @@ impl MetaData {
                                 builder.full_name = Some(feat_name.into());
                             }
                             ("fallback-names", toml::Value::Array(values)) => {
-                                let key = format!("{}.{}.{}", p_key, name, version_feature);
+                                let key = format!("{p_key}.{name}.{version_feature}");
                                 builder.fallback_names = Some(Self::parse_name_list(&key, values)?);
                             }
                             ("optional", &toml::Value::Boolean(optional)) => {
@@ -325,7 +319,7 @@ impl MetaData {
                             }
                             _ => {
                                 return Err(MetadataError::UnexpectedVersionSetting(
-                                    format!("{}.{}", p_key, name),
+                                    format!("{p_key}.{name}"),
                                     k.to_owned(),
                                     v.type_str().to_owned(),
                                 ));
@@ -337,7 +331,7 @@ impl MetaData {
                 }
                 _ => {
                     return Err(MetadataError::UnexpectedKey(
-                        format!("{}.{}", p_key, name),
+                        format!("{p_key}.{name}"),
                         key.to_owned(),
                         value.type_str().to_owned(),
                     ));
@@ -355,7 +349,7 @@ impl MetaData {
                 value
                     .as_str()
                     .map(|x| x.to_owned())
-                    .ok_or_else(|| MetadataError::NotString(format!("{}[{}]", key, i)))
+                    .ok_or_else(|| MetadataError::NotString(format!("{key}[{i}]")))
             })
             .collect()
     }
