@@ -202,6 +202,14 @@
 //! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
 //! Libraries can be statically linked by defining the environment variable `SYSTEM_DEPS_$NAME_LINK=static`.
 //! You can also use `SYSTEM_DEPS_LINK=static` to statically link all the libraries.
+//! Additionally, you can use `SYSTEM_DEPS(_$NAME)_LINK=static_release` to link statically only on release builds.
+//!
+//! # Cleaning the linking line
+//!
+//! By default, system-deps will add all of the linking arguments from `pkg-config` in order for each separate library.
+//! If you are using a large number of libraries, this can result in errors because the linking line is too long.
+//! To aleviate this, the variable `SYSTEM_DEPS_CLEAN_LINKER` can be set, which will deduplicate all of the linking arguments.
+//! While a best effort is made to keep a correct ordering, this can't be guaranteed when using this option, so please take extra
 
 #![deny(missing_docs)]
 
@@ -344,12 +352,17 @@ impl Dependencies {
         v
     }
 
-    /// Returns a vector of [Library::libs] of each library, removing duplicates.
-    pub fn all_libs(&self) -> Vec<&str> {
+    /// Returns a vector of [Library::libs] of each library and if they are linked statically, removing duplicates.
+    pub fn all_libs(&self) -> Vec<(&str, bool)> {
         let mut v = self
             .libs
             .values()
-            .flat_map(|l| l.libs.iter().map(|lib| lib.name.as_str()))
+            .flat_map(|l| {
+                let statik = l.statik.get();
+                l.libs
+                    .iter()
+                    .map(move |lib| (lib.name.as_str(), statik && lib.is_static_available))
+            })
             .collect::<Vec<_>>();
         v.sort_unstable();
         v.dedup();
@@ -443,44 +456,66 @@ impl Dependencies {
         }
     }
 
-    fn gen_flags(&self) -> Result<BuildFlags, Error> {
+    /// Writes cargo flags. If `clean` is set to true, it will try to deduplicate the linking
+    /// arguments (sometimes it is necessary to avoid too many arguments).
+    fn gen_flags(&self, clean: bool) -> Result<BuildFlags, Error> {
         let mut flags = BuildFlags::new();
         let mut include_paths = Vec::new();
 
         for (name, lib) in self.iter() {
-            include_paths.extend(lib.include_paths.clone());
-
             if lib.source == Source::EnvVariables
                 && lib.libs.is_empty()
                 && lib.frameworks.is_empty()
             {
                 return Err(Error::MissingLib(name.to_string()));
             }
+        }
 
-            lib.link_paths
-                .iter()
+        if clean {
+            include_paths.extend(self.all_include_paths());
+            self.all_link_paths()
+                .into_iter()
                 .for_each(|l| flags.add(BuildFlag::SearchNative(l.to_string_lossy().to_string())));
-            lib.framework_paths.iter().for_each(|f| {
+            self.all_framework_paths().into_iter().for_each(|f| {
                 flags.add(BuildFlag::SearchFramework(f.to_string_lossy().to_string()))
             });
-            lib.libs.iter().for_each(|l| {
-                flags.add(BuildFlag::Lib(
-                    l.name.clone(),
-                    lib.statik && l.is_static_available,
-                ))
-            });
-            lib.frameworks
-                .iter()
-                .for_each(|f| flags.add(BuildFlag::LibFramework(f.clone())));
-            lib.ld_args
-                .iter()
-                .for_each(|f| flags.add(BuildFlag::LinkArg(f.clone())))
+            self.all_libs()
+                .into_iter()
+                .for_each(|(l, s)| flags.add(BuildFlag::Lib(l.to_string(), s)));
+            self.all_frameworks()
+                .into_iter()
+                .for_each(|f| flags.add(BuildFlag::LibFramework(f.to_string())));
+            self.all_linker_args()
+                .into_iter()
+                .for_each(|f| flags.add(BuildFlag::LinkArg(f.clone())));
+        } else {
+            for (_, lib) in self.iter() {
+                include_paths.extend(lib.include_paths.iter());
+                lib.link_paths.iter().for_each(|l| {
+                    flags.add(BuildFlag::SearchNative(l.to_string_lossy().to_string()))
+                });
+                lib.framework_paths.iter().for_each(|f| {
+                    flags.add(BuildFlag::SearchFramework(f.to_string_lossy().to_string()))
+                });
+                lib.libs.iter().for_each(|l| {
+                    flags.add(BuildFlag::Lib(
+                        l.name.clone(),
+                        lib.statik.get() && l.is_static_available,
+                    ))
+                });
+                lib.frameworks
+                    .iter()
+                    .for_each(|f| flags.add(BuildFlag::LibFramework(f.clone())));
+                lib.ld_args
+                    .iter()
+                    .for_each(|f| flags.add(BuildFlag::LinkArg(f.clone())))
+            }
         }
 
         // Export DEP_$CRATE_INCLUDE env variable with the headers paths,
         // see https://kornel.ski/rust-sys-crate#headers
         if !include_paths.is_empty() {
-            if let Ok(paths) = std::env::join_paths(include_paths) {
+            if let Ok(paths) = env::join_paths(include_paths) {
                 flags.add(BuildFlag::Include(paths.to_string_lossy().to_string()));
             }
         }
@@ -556,6 +591,7 @@ enum EnvVariable {
     BuildInternal(Option<String>),
     Link(Option<String>),
     LinkerArgs(String),
+    CleanLink,
 }
 
 impl EnvVariable {
@@ -606,6 +642,7 @@ impl EnvVariable {
             EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
             EnvVariable::Link(_) => "LINK",
             EnvVariable::LinkerArgs(_) => "LDFLAGS",
+            EnvVariable::CleanLink => "CLEAN_LINK",
         }
     }
 
@@ -640,7 +677,9 @@ impl fmt::Display for EnvVariable {
             | EnvVariable::Link(Some(lib)) => {
                 format!("{}_{}", lib.to_shouty_snake_case(), self.suffix())
             }
-            EnvVariable::BuildInternal(None) | EnvVariable::Link(None) => self.suffix().to_string(),
+            EnvVariable::BuildInternal(None) | EnvVariable::Link(None) | EnvVariable::CleanLink => {
+                self.suffix().to_string()
+            }
         };
         write!(f, "SYSTEM_DEPS_{suffix}")
     }
@@ -679,8 +718,9 @@ impl Config {
     ///
     /// The returned hash is using the `toml` key defining the dependency as key.
     pub fn probe(self) -> Result<Dependencies, Error> {
+        let clean_link = self.env.get(&EnvVariable::CleanLink).is_some();
         let libraries = self.probe_full()?;
-        let flags = libraries.gen_flags()?;
+        let flags = libraries.gen_flags(clean_link)?;
 
         // Output cargo flags
         println!("{flags}");
@@ -807,11 +847,17 @@ impl Config {
             let name = &dep.key;
             let build_internal = self.get_build_internal_status(name)?;
 
-            // should the lib be statically linked?
-            let statik = self
+            // Should the lib be statically linked?
+            let statik = match self
                 .env
-                .has_value(&EnvVariable::new_link(Some(name)), "static")
-                || self.env.has_value(&EnvVariable::new_link(None), "static");
+                .get(&EnvVariable::new_link(Some(name)))
+                .or(self.env.get(&EnvVariable::new_link(None)))
+                .as_deref()
+            {
+                Some("static_release") => StaticLinking::Release,
+                Some(_) => StaticLinking::Always,
+                None => StaticLinking::Never,
+            };
 
             let mut library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables(name)
@@ -823,7 +869,7 @@ impl Config {
                     .print_system_libs(false)
                     .cargo_metadata(false)
                     .range_version(metadata::parse_version(version))
-                    .statik(statik);
+                    .statik(statik.get());
 
                 match Self::probe_with_fallback(config, lib_name, fallback_lib_names) {
                     Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
@@ -980,6 +1026,27 @@ pub enum Source {
     EnvVariables,
 }
 
+#[derive(Debug, Clone, Copy)]
+/// Should the library be statically linked
+pub enum StaticLinking {
+    /// Always try to link statically. This is the default for internally built libraries.
+    Always,
+    /// Link statically for release builds, and dynamically on debug.
+    Release,
+    /// Always link dynamically. This is the default for regular libraries.
+    Never,
+}
+
+impl StaticLinking {
+    fn get(&self) -> bool {
+        match self {
+            StaticLinking::Always => true,
+            StaticLinking::Release => cfg!(not(debug_assertions)),
+            StaticLinking::Never => false,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 /// Internal library name and if a static library is available on the system
 pub struct InternalLib {
@@ -1022,7 +1089,7 @@ pub struct Library {
     /// library version
     pub version: String,
     /// library is statically linked
-    pub statik: bool,
+    pub statik: StaticLinking,
 }
 
 impl Library {
@@ -1078,7 +1145,7 @@ impl Library {
             framework_paths: l.framework_paths,
             defines: l.defines,
             version: l.version,
-            statik: false,
+            statik: StaticLinking::Never,
         }
     }
 
@@ -1094,7 +1161,7 @@ impl Library {
             framework_paths: Vec::new(),
             defines: HashMap::new(),
             version: String::new(),
-            statik: false,
+            statik: StaticLinking::Never,
         }
     }
 
@@ -1153,7 +1220,7 @@ impl Library {
         match pkg_lib {
             Ok(pkg_lib) => {
                 let mut lib = Self::from_pkg_config(lib, pkg_lib);
-                lib.statik = true;
+                lib.statik = StaticLinking::Always;
                 Ok(lib)
             }
             Err(e) => Err(e.into()),
