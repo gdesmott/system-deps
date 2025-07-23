@@ -1,6 +1,6 @@
 [package]
 name = "system-deps"
-version = "7.0.3"
+version = "7.0.5"
 authors = [
     "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
     "Josh Triplett <josh@joshtriplett.org>",
@@ -16,6 +16,7 @@ keywords = [
     "metadata",
 ]
 edition = "2018"
+rust-version = "1.78.0"
 documentation = "https://docs.rs/system-deps/"
 readme = "README.md"
 
@@ -24,9 +25,10 @@ pkg-config = "0.3.25"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
 version-compare = "0.2"
 heck = "0.5"
-cfg-expr = { version = "0.17", features = ["targets"] }
+# allow cfg-expr between 0.17 and 0.20 to keep MSRV lower
+cfg-expr = { version = ">= 0.17, < 0.21", features = ["targets"] }
 
 [dev-dependencies]
 lazy_static = "1"
-itertools = "0.13"
+itertools = "0.14"
 assert_matches = "1.5"
