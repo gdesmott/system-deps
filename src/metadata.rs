@@ -389,7 +389,7 @@ impl<'a> std::ops::RangeBounds<&'a str> for VersionRange<'a> {
     }
 }
 
-pub(crate) fn parse_version(version: &str) -> VersionRange {
+pub(crate) fn parse_version(version: &str) -> VersionRange<'_> {
     if let Some((min, max)) = version.split_once(',') {
         // Format checked when parsing
         let min = min.trim_start().strip_prefix(">=").unwrap().trim();
