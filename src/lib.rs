@@ -772,7 +772,7 @@ impl Config {
                 optional = dep.optional;
             } else {
                 enabled_feature_overrides.sort_by(|a, b| {
-                    fn min_version(r: metadata::VersionRange) -> &str {
+                    fn min_version(r: metadata::VersionRange<'_>) -> &str {
                         match r.start_bound() {
                             std::ops::Bound::Unbounded => unreachable!(),
                             std::ops::Bound::Excluded(_) => unreachable!(),
@@ -902,14 +902,14 @@ impl Config {
 
         // Check that the lib built internally matches the required version
         let version = metadata::parse_version(version_str);
-        fn min_version(r: metadata::VersionRange) -> &str {
+        fn min_version(r: metadata::VersionRange<'_>) -> &str {
             match r.start_bound() {
                 std::ops::Bound::Unbounded => unreachable!(),
                 std::ops::Bound::Excluded(_) => unreachable!(),
                 std::ops::Bound::Included(b) => b,
             }
         }
-        fn max_version(r: metadata::VersionRange) -> Option<&str> {
+        fn max_version(r: metadata::VersionRange<'_>) -> Option<&str> {
             match r.end_bound() {
                 std::ops::Bound::Included(_) => unreachable!(),
                 std::ops::Bound::Unbounded => None,
