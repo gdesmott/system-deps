@@ -161,6 +161,7 @@
 //! - `SYSTEM_DEPS_$NAME_SEARCH_NATIVE` to override the [`cargo:rustc-link-search=native`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorustc-link-searchkindpath) flag;
 //! - `SYSTEM_DEPS_$NAME_SEARCH_FRAMEWORK` to override the [`cargo:rustc-link-search=framework`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorustc-link-searchkindpath) flag;
 //! - `SYSTEM_DEPS_$NAME_LIB` to override the [`cargo:rustc-link-lib`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-lib) flag;
+//! - `SYSTEM_DEPS_$NAME_MOD` to add a link modifier to the [`cargo:rustc-link-mod`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-lib) flag;
 //! - `SYSTEM_DEPS_$NAME_LIB_FRAMEWORK` to override the [`cargo:rustc-link-lib=framework`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#rustc-link-lib) flag;
 //! - `SYSTEM_DEPS_$NAME_INCLUDE` to override the [`cargo:include`](https://kornel.ski/rust-sys-crate#headers) flag.
 //!
@@ -202,6 +203,18 @@
 //! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
 //! Libraries can be statically linked by defining the environment variable `SYSTEM_DEPS_$NAME_LINK=static`.
 //! You can also use `SYSTEM_DEPS_LINK=static` to statically link all the libraries.
+//!
+//! # Linking Modifiers
+//!
+//! `rustc` supports adding [modifiers](https://doc.rust-lang.org/rustc/command-line-arguments.html#-l-link-the-generated-crate-to-a-native-library) to linked libraries for control over how they are linked.
+//! Libraries can have modifiers attached to them through the environment variable `SYSTEM_DEPS_$NAME_MOD=$MODIFIER_STRING` or through the toml file definition:
+//!
+//! ```toml
+//! [package.metadata.system-deps]
+//! testdata = "4"
+//! teststaticlib = { version = "1", feature = "test-feature", modifiers = "+whole-archive"}
+//! testmore = { version = "2", name = "testmore.a", modifiers = "+whole-archive,-verbatim"}
+//! ```
 
 #![deny(missing_docs)]
 
@@ -325,13 +338,8 @@ impl Dependencies {
         v
     }
 
-    fn aggregate_str<F: Fn(&Library) -> &Vec<String>>(&self, getter: F) -> Vec<&str> {
-        let mut v = self
-            .libs
-            .values()
-            .flat_map(getter)
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>();
+    fn aggregate_str<F: Fn(&Library) -> Vec<String>>(&self, getter: F) -> Vec<String> {
+        let mut v: Vec<String> = self.libs.values().flat_map(getter).collect();
         v.sort_unstable();
         v.dedup();
         v
@@ -362,8 +370,13 @@ impl Dependencies {
     }
 
     /// Returns a vector of [Library::frameworks] of each library, removing duplicates.
-    pub fn all_frameworks(&self) -> Vec<&str> {
-        self.aggregate_str(|l| &l.frameworks)
+    pub fn all_frameworks(&self) -> Vec<String> {
+        self.aggregate_str(|l| {
+            l.frameworks
+                .iter()
+                .map(|(framework, _modifier)| framework.clone())
+                .collect::<Vec<String>>()
+        })
     }
 
     /// Returns a vector of [Library::framework_paths] of each library, removing duplicates.
@@ -423,13 +436,32 @@ impl Dependencies {
                 // available and let the linking fail if the user is wrong.
                 let is_static_lib_available = should_be_linked_statically;
 
+                // modifiers have different specifications
+                // some work with only static libs (whole-archive, bundle)
+                // others work with all library types (verbatim)
+                // however an empty string will not affect linking
+                let modifiers = env
+                    .get(&EnvVariable::new_modifier(Some(name)))
+                    .unwrap_or_default();
+
                 lib.libs = split_string(&value)
                     .into_iter()
-                    .map(|l| InternalLib::new(l, is_static_lib_available))
+                    .map(|l| InternalLib::new(l, is_static_lib_available, modifiers.clone()))
                     .collect();
             }
             if let Some(value) = env.get(&EnvVariable::new_lib_framework(name)) {
-                lib.frameworks = split_string(&value);
+                // modifiers have different specifications
+                // some work with only static libs (whole-archive, bundle)
+                // others work with all library types (verbatim)
+                // however an empty string will not affect linking
+                let modifiers = env
+                    .get(&EnvVariable::new_modifier(Some(name)))
+                    .unwrap_or_default();
+
+                lib.frameworks = split_string(&value)
+                    .iter()
+                    .map(|s| (s.clone(), modifiers.clone()))
+                    .collect::<Vec<(String, String)>>();
             }
             if let Some(value) = env.get(&EnvVariable::new_include(name)) {
                 lib.include_paths = split_paths(&value);
@@ -467,11 +499,12 @@ impl Dependencies {
                 flags.add(BuildFlag::Lib(
                     l.name.clone(),
                     lib.statik && l.is_static_available,
+                    l.modifiers.clone(),
                 ))
             });
-            lib.frameworks
-                .iter()
-                .for_each(|f| flags.add(BuildFlag::LibFramework(f.clone())));
+            lib.frameworks.iter().for_each(|(framework, modifier)| {
+                flags.add(BuildFlag::LibFramework(framework.clone(), modifier.clone()))
+            });
             lib.ld_args
                 .iter()
                 .for_each(|f| flags.add(BuildFlag::LinkArg(f.clone())))
@@ -556,6 +589,7 @@ enum EnvVariable {
     BuildInternal(Option<String>),
     Link(Option<String>),
     LinkerArgs(String),
+    Modifiers(Option<String>),
 }
 
 impl EnvVariable {
@@ -595,6 +629,10 @@ impl EnvVariable {
         Self::Link(lib.map(|l| l.to_string()))
     }
 
+    fn new_modifier(lib: Option<&str>) -> Self {
+        Self::Modifiers(lib.map(|m| m.to_string()))
+    }
+
     fn suffix(&self) -> &'static str {
         match self {
             EnvVariable::Lib(_) => "LIB",
@@ -606,6 +644,7 @@ impl EnvVariable {
             EnvVariable::BuildInternal(_) => "BUILD_INTERNAL",
             EnvVariable::Link(_) => "LINK",
             EnvVariable::LinkerArgs(_) => "LDFLAGS",
+            EnvVariable::Modifiers(_) => "MODIFIER",
         }
     }
 
@@ -623,6 +662,7 @@ impl EnvVariable {
         add_to_flags(flags, EnvVariable::new_no_pkg_config(name));
         add_to_flags(flags, EnvVariable::new_build_internal(Some(name)));
         add_to_flags(flags, EnvVariable::new_link(Some(name)));
+        add_to_flags(flags, EnvVariable::new_modifier(Some(name)));
     }
 }
 
@@ -640,7 +680,12 @@ impl fmt::Display for EnvVariable {
             | EnvVariable::Link(Some(lib)) => {
                 format!("{}_{}", lib.to_shouty_snake_case(), self.suffix())
             }
-            EnvVariable::BuildInternal(None) | EnvVariable::Link(None) => self.suffix().to_string(),
+            EnvVariable::Modifiers(Some(modifier)) => {
+                format!("{}_{}", modifier.to_shouty_snake_case(), self.suffix())
+            }
+            EnvVariable::BuildInternal(None)
+            | EnvVariable::Link(None)
+            | EnvVariable::Modifiers(None) => self.suffix().to_string(),
         };
         write!(f, "SYSTEM_DEPS_{suffix}")
     }
@@ -813,6 +858,16 @@ impl Config {
                 .has_value(&EnvVariable::new_link(Some(name)), "static")
                 || self.env.has_value(&EnvVariable::new_link(None), "static");
 
+            // does the linked lib have any modifiers?
+            // prefer the config over the env variable
+            let modifiers: String = match &dep.modifier {
+                Some(modifier) => modifier.clone(),
+                None => self
+                    .env
+                    .get(&EnvVariable::new_modifier(Some(name)))
+                    .unwrap_or_default(),
+            };
+
             let mut library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables(name)
             } else if build_internal == BuildInternal::Always {
@@ -826,7 +881,9 @@ impl Config {
                     .statik(statik);
 
                 match Self::probe_with_fallback(config, lib_name, fallback_lib_names) {
-                    Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
+                    Ok((lib_name, lib)) => {
+                        Library::from_pkg_config(lib_name, lib, modifiers.clone())
+                    }
                     Err(e) => {
                         if build_internal == BuildInternal::Auto {
                             // Try building the lib internally as a fallback
@@ -840,7 +897,6 @@ impl Config {
                     }
                 }
             };
-
             library.statik = statik;
 
             libraries.add(name, library);
@@ -987,13 +1043,16 @@ pub struct InternalLib {
     pub name: String,
     /// Indicates if a static library is available on the system
     pub is_static_available: bool,
+    /// Optional Modifiers for linked libraries
+    pub modifiers: String,
 }
 
 impl InternalLib {
-    fn new(name: String, is_static_available: bool) -> Self {
+    fn new(name: String, is_static_available: bool, modifiers: String) -> Self {
         InternalLib {
             name,
             is_static_available,
+            modifiers,
         }
     }
 }
@@ -1009,8 +1068,8 @@ pub struct Library {
     pub libs: Vec<InternalLib>,
     /// directories where the compiler should look for libraries
     pub link_paths: Vec<PathBuf>,
-    /// frameworks the linker should link on
-    pub frameworks: Vec<String>,
+    /// frameworks the linker should link on and their modifiers
+    pub frameworks: Vec<(String, String)>,
     /// directories where the compiler should look for frameworks
     pub framework_paths: Vec<PathBuf>,
     /// directories where the compiler should look for header files
@@ -1026,7 +1085,7 @@ pub struct Library {
 }
 
 impl Library {
-    fn from_pkg_config(name: &str, l: pkg_config::Library) -> Self {
+    fn from_pkg_config(name: &str, l: pkg_config::Library, modifiers: String) -> Self {
         // taken from: https://github.com/rust-lang/pkg-config-rs/blob/54325785816695df031cef3b26b6a9a203bbc01b/src/lib.rs#L502
         let system_roots = if cfg!(target_os = "macos") {
             vec![PathBuf::from("/Library"), PathBuf::from("/System")]
@@ -1069,12 +1128,18 @@ impl Library {
             libs: l
                 .libs
                 .iter()
-                .map(|lib| InternalLib::new(lib.to_owned(), is_static_available(lib)))
+                .map(|lib| {
+                    InternalLib::new(lib.to_owned(), is_static_available(lib), modifiers.clone())
+                })
                 .collect(),
             link_paths: l.link_paths,
             include_paths: l.include_paths,
             ld_args: l.ld_args,
-            frameworks: l.frameworks,
+            frameworks: l
+                .frameworks
+                .iter()
+                .map(|s| (s.clone(), modifiers.clone()))
+                .collect(),
             framework_paths: l.framework_paths,
             defines: l.defines,
             version: l.version,
@@ -1150,9 +1215,13 @@ impl Library {
 
         env::set_var("PKG_CONFIG_PATH", old.unwrap_or_else(|_| "".into()));
 
+        // Get the modifiers for the lib
+        let modifiers =
+            env::var(EnvVariable::new_modifier(Some(lib)).to_string()).unwrap_or_default();
+
         match pkg_lib {
             Ok(pkg_lib) => {
-                let mut lib = Self::from_pkg_config(lib, pkg_lib);
+                let mut lib = Self::from_pkg_config(lib, pkg_lib, modifiers);
                 lib.statik = true;
                 Ok(lib)
             }
@@ -1206,8 +1275,8 @@ enum BuildFlag {
     Include(String),
     SearchNative(String),
     SearchFramework(String),
-    Lib(String, bool), // true if static
-    LibFramework(String),
+    Lib(String, bool, String), // lib name, true if static, optional linking modifiers
+    LibFramework(String, String), //lib name, optional linking modifiers
     RerunIfEnvChanged(EnvVariable),
     LinkArg(Vec<String>),
 }
@@ -1218,14 +1287,27 @@ impl fmt::Display for BuildFlag {
             BuildFlag::Include(paths) => write!(f, "include={paths}"),
             BuildFlag::SearchNative(lib) => write!(f, "rustc-link-search=native={lib}"),
             BuildFlag::SearchFramework(lib) => write!(f, "rustc-link-search=framework={lib}"),
-            BuildFlag::Lib(lib, statik) => {
+            BuildFlag::Lib(lib, statik, modifiers) => {
+                let mut link_string = String::from("rustc-link-lib=");
                 if *statik {
-                    write!(f, "rustc-link-lib=static={lib}")
+                    if modifiers.is_empty() {
+                        link_string = format!("{link_string}static={lib}");
+                    } else {
+                        link_string = format!("{link_string}static:{modifiers}={lib}");
+                    }
                 } else {
-                    write!(f, "rustc-link-lib={lib}")
+                    link_string = format!("{link_string}{lib}");
+                }
+
+                write!(f, "{link_string}")
+            }
+            BuildFlag::LibFramework(lib, modifiers) => {
+                if modifiers.is_empty() {
+                    write!(f, "rustc-link-lib=framework={lib}")
+                } else {
+                    write!(f, "rustc-link-lib=framework:{modifiers}={lib}")
                 }
             }
-            BuildFlag::LibFramework(lib) => write!(f, "rustc-link-lib=framework={lib}"),
             BuildFlag::RerunIfEnvChanged(env) => write!(f, "rerun-if-env-changed={env}"),
             BuildFlag::LinkArg(ld_option) => {
                 write!(f, "rustc-link-arg=-Wl,{}", ld_option.join(","))
