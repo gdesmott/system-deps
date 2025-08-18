@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use assert_matches::assert_matches;
 
-use crate::Dependencies;
+use crate::{Dependencies, StaticLinking};
 
 use super::{
     BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, InternalLib, Library,
@@ -53,7 +53,7 @@ fn toml(
     env: Vec<(&'static str, &'static str)>,
 ) -> Result<(Dependencies, BuildFlags), Error> {
     let libs = create_config(path, env).probe_full()?;
-    let flags = libs.gen_flags()?;
+    let flags = libs.gen_flags(true)?;
     Ok((libs, flags))
 }
 
@@ -973,7 +973,10 @@ fn optional() {
 fn aggregate() {
     let (libraries, _) = toml("toml-two-libs", vec![]).unwrap();
 
-    assert_eq!(libraries.all_libs(), vec!["test", "test2"]);
+    assert_eq!(
+        libraries.all_libs(),
+        vec![("test", false), ("test2", false)]
+    );
     assert_eq!(
         libraries.all_link_paths(),
         vec![Path::new("/usr/lib"), Path::new("/usr/lib64")]
@@ -1049,10 +1052,10 @@ fn static_one_lib() {
     .unwrap();
 
     let testdata = libraries.get_by_name("testdata").unwrap();
-    assert!(!testdata.statik);
+    assert!(matches!(testdata.statik, StaticLinking::Never));
 
     let testlib = libraries.get_by_name("teststaticlib").unwrap();
-    assert!(testlib.statik);
+    assert!(matches!(testlib.statik, StaticLinking::Always));
 
     assert_flags(
         flags,
@@ -1100,7 +1103,7 @@ fn override_static_no_pkg_config() {
     .unwrap();
     let testlib = libraries.get_by_name("teststaticlib").unwrap();
     assert_eq!(testlib.link_paths, Vec::<PathBuf>::new());
-    assert!(testlib.statik);
+    assert!(matches!(testlib.statik, StaticLinking::Always));
     assert_eq!(testlib.framework_paths, Vec::<PathBuf>::new());
     assert_eq!(
         testlib.libs,
@@ -1141,10 +1144,10 @@ fn static_all_libs() {
     let (libraries, flags) = toml("toml-static", vec![("SYSTEM_DEPS_LINK", "static")]).unwrap();
 
     let testdata = libraries.get_by_name("testdata").unwrap();
-    assert!(testdata.statik);
+    assert!(matches!(testdata.statik, StaticLinking::Always));
 
     let testlib = libraries.get_by_name("teststaticlib").unwrap();
-    assert!(testlib.statik);
+    assert!(matches!(testlib.statik, StaticLinking::Always));
 
     assert_flags(
         flags,
@@ -1182,12 +1185,12 @@ fn static_lib_not_available() {
     let (libraries, flags) = toml("toml-good", vec![("SYSTEM_DEPS_LINK", "static")]).unwrap();
 
     let testdata = libraries.get_by_name("testdata").unwrap();
-    assert!(testdata.statik);
+    assert!(matches!(testdata.statik, StaticLinking::Always));
 
     // testlib is not available as static library, which is why it is linked dynamically,
     // as seen below
     let testlib = libraries.get_by_name("testlib").unwrap();
-    assert!(testlib.statik);
+    assert!(matches!(testlib.statik, StaticLinking::Always));
 
     assert_flags(
         flags,
