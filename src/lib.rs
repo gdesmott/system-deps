@@ -297,7 +297,7 @@ impl fmt::Display for Error {
 }
 
 #[derive(Debug, Default)]
-/// All the system dependencies retrieved by [Config::probe].
+/// All the system dependencies retrieved by [`Config::probe`].
 pub struct Dependencies {
     libs: HashMap<String, Library>,
 }
@@ -344,7 +344,7 @@ impl Dependencies {
         v
     }
 
-    /// Returns a vector of [Library::libs] of each library, removing duplicates.
+    /// Returns a vector of [`Library::libs`] of each library, removing duplicates.
     pub fn all_libs(&self) -> Vec<&str> {
         let mut v = self
             .libs
@@ -356,27 +356,27 @@ impl Dependencies {
         v
     }
 
-    /// Returns a vector of [Library::link_paths] of each library, removing duplicates.
+    /// Returns a vector of [`Library::link_paths`] of each library, removing duplicates.
     pub fn all_link_paths(&self) -> Vec<&PathBuf> {
         self.aggregate_path_buf(|l| &l.link_paths)
     }
 
-    /// Returns a vector of [Library::frameworks] of each library, removing duplicates.
+    /// Returns a vector of [`Library::frameworks`] of each library, removing duplicates.
     pub fn all_frameworks(&self) -> Vec<&str> {
         self.aggregate_str(|l| &l.frameworks)
     }
 
-    /// Returns a vector of [Library::framework_paths] of each library, removing duplicates.
+    /// Returns a vector of [`Library::framework_paths`] of each library, removing duplicates.
     pub fn all_framework_paths(&self) -> Vec<&PathBuf> {
         self.aggregate_path_buf(|l| &l.framework_paths)
     }
 
-    /// Returns a vector of [Library::include_paths] of each library, removing duplicates.
+    /// Returns a vector of [`Library::include_paths`] of each library, removing duplicates.
     pub fn all_include_paths(&self) -> Vec<&PathBuf> {
         self.aggregate_path_buf(|l| &l.include_paths)
     }
 
-    /// Returns a vector of [Library::ld_args] of each library, removing duplicates.
+    /// Returns a vector of [`Library::ld_args`] of each library, removing duplicates.
     pub fn all_linker_args(&self) -> Vec<&Vec<String>> {
         let mut v = self
             .libs
@@ -388,7 +388,7 @@ impl Dependencies {
         v
     }
 
-    /// Returns a vector of [Library::defines] of each library, removing duplicates.
+    /// Returns a vector of [`Library::defines`] of each library, removing duplicates.
     pub fn all_defines(&self) -> Vec<(&str, &Option<String>)> {
         let mut v = self
             .libs
