@@ -595,7 +595,7 @@ impl EnvVariable {
         Self::Link(lib.map(|l| l.to_string()))
     }
 
-    fn suffix(&self) -> &'static str {
+    const fn suffix(&self) -> &'static str {
         match self {
             EnvVariable::Lib(_) => "LIB",
             EnvVariable::LibFramework(_) => "LIB_FRAMEWORK",
@@ -990,7 +990,7 @@ pub struct InternalLib {
 }
 
 impl InternalLib {
-    fn new(name: String, is_static_available: bool) -> Self {
+    const fn new(name: String, is_static_available: bool) -> Self {
         InternalLib {
             name,
             is_static_available,
@@ -1238,7 +1238,7 @@ impl fmt::Display for BuildFlag {
 struct BuildFlags(Vec<BuildFlag>);
 
 impl BuildFlags {
-    fn new() -> Self {
+    const fn new() -> Self {
         Self(Vec::new())
     }
 
