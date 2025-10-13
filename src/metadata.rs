@@ -185,7 +185,7 @@ impl MetaData {
     }
 
     fn from_str(manifest_str: String) -> Result<Self, MetadataError> {
-        let toml = manifest_str.parse::<toml::Value>()?;
+        let toml = manifest_str.parse::<toml::Table>()?;
         let key = "package.metadata.system-deps";
         let meta = toml
             .get("package")
