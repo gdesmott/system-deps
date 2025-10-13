@@ -22,7 +22,7 @@ readme = "README.md"
 
 [dependencies]
 pkg-config = "0.3.25"
-toml = { version = "0.8", default-features = false, features = ["parse"] }
+toml = { version = "0.9", default-features = false, features = ["parse", "serde", "std"] }
 version-compare = "0.2"
 heck = "0.5"
 # allow cfg-expr between 0.17 and 0.20 to keep MSRV lower
