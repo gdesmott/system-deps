@@ -2,7 +2,8 @@
 
 use std::{fmt, fs, io::Read, path::Path};
 
-use toml::{map::Map, Value};
+use toml::de::{DeArray, DeTable, DeValue};
+use toml::Spanned;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct MetaData {
@@ -185,12 +186,13 @@ impl MetaData {
     }
 
     fn from_str(manifest_str: String) -> Result<Self, MetadataError> {
-        let toml = manifest_str.parse::<toml::Table>()?;
+        let toml = DeTable::parse(&manifest_str)?;
         let key = "package.metadata.system-deps";
         let meta = toml
+            .get_ref()
             .get("package")
-            .and_then(|v| v.get("metadata"))
-            .and_then(|v| v.get("system-deps"))
+            .and_then(|v| v.get_ref().get("metadata"))
+            .and_then(|v| v.get_ref().get("system-deps"))
             .ok_or_else(|| MetadataError::MissingKey(key.to_owned()))?;
 
         let deps = Self::parse_deps_table(meta, key, true)?;
@@ -199,17 +201,19 @@ impl MetaData {
     }
 
     fn parse_deps_table(
-        table: &Value,
+        table: &Spanned<DeValue<'_>>,
         key: &str,
         allow_cfg: bool,
     ) -> Result<Vec<Dependency>, MetadataError> {
         let table = table
+            .get_ref()
             .as_table()
             .ok_or_else(|| MetadataError::NotATable(key.to_owned()))?;
 
         let mut deps = Vec::new();
 
-        for (name, value) in table {
+        for (name_spanned, value) in table {
+            let name = name_spanned.as_ref();
             if name.starts_with("cfg(") {
                 if allow_cfg {
                     let cfg_exp = cfg_expr::Expression::parse(name)?;
@@ -230,23 +234,27 @@ impl MetaData {
         Ok(deps)
     }
 
-    fn parse_dep(key: &str, name: &str, value: &Value) -> Result<Dependency, MetadataError> {
+    fn parse_dep(
+        key: &str,
+        name: &str,
+        value: &Spanned<DeValue<'_>>,
+    ) -> Result<Dependency, MetadataError> {
         let mut dep = Dependency::new(name);
 
-        match value {
+        match value.as_ref() {
             // somelib = "1.0"
-            toml::Value::String(ref s) => {
+            DeValue::String(ref s) => {
                 if !validate_version(s) {
                     return Err(MetadataError::UnexpectedVersionSetting(
                         key.into(),
                         name.into(),
-                        value.type_str().to_owned(),
+                        value.as_ref().type_str().to_owned(),
                     ));
                 }
 
-                dep.version = Some(s.clone());
+                dep.version = Some(s.clone().into_owned());
             }
-            toml::Value::Table(ref t) => {
+            DeValue::Table(ref t) => {
                 Self::parse_dep_table(key, name, &mut dep, t)?;
             }
             _ => {
@@ -261,67 +269,69 @@ impl MetaData {
         p_key: &str,
         name: &str,
         dep: &mut Dependency,
-        t: &Map<String, Value>,
+        t: &DeTable<'_>,
     ) -> Result<(), MetadataError> {
-        for (key, value) in t {
-            match (key.as_str(), value) {
-                ("feature", toml::Value::String(s)) => {
-                    dep.feature = Some(s.clone());
+        for (key_spanned, value) in t {
+            let key = key_spanned.as_ref().as_ref();
+            match (key, value.as_ref()) {
+                ("feature", DeValue::String(s)) => {
+                    dep.feature = Some(s.clone().into_owned());
                 }
-                ("version", toml::Value::String(s)) => {
+                ("version", DeValue::String(s)) => {
                     if !validate_version(s) {
                         return Err(MetadataError::UnexpectedVersionSetting(
                             format!("{p_key}.{name}"),
                             key.into(),
-                            value.type_str().to_owned(),
+                            value.as_ref().type_str().to_owned(),
                         ));
                     }
 
-                    dep.version = Some(s.clone());
+                    dep.version = Some(s.clone().into_owned());
                 }
-                ("name", toml::Value::String(s)) => {
-                    dep.name = Some(s.clone());
+                ("name", DeValue::String(s)) => {
+                    dep.name = Some(s.clone().into_owned());
                 }
-                ("fallback-names", toml::Value::Array(values)) => {
+                ("fallback-names", DeValue::Array(values)) => {
                     let key = format!("{p_key}.{name}");
                     dep.fallback_names = Some(Self::parse_name_list(&key, values)?);
                 }
-                ("optional", &toml::Value::Boolean(optional)) => {
+                ("optional", &DeValue::Boolean(optional)) => {
                     dep.optional = optional;
                 }
-                (version_feature, toml::Value::Table(version_settings))
+                (version_feature, DeValue::Table(version_settings))
                     if version_feature.starts_with('v') =>
                 {
                     let mut builder = VersionOverrideBuilder::new(version_feature);
 
-                    for (k, v) in version_settings {
-                        match (k.as_str(), v) {
-                            ("version", toml::Value::String(feat_vers)) => {
+                    for (k_spanned, v) in version_settings {
+                        let k = k_spanned.as_ref().as_ref();
+                        match (k, v.as_ref()) {
+                            ("version", DeValue::String(feat_vers)) => {
                                 if !validate_version(feat_vers) {
                                     return Err(MetadataError::UnexpectedVersionSetting(
                                         format!("{p_key}.{name}"),
                                         k.into(),
-                                        v.type_str().to_owned(),
+                                        v.as_ref().type_str().to_owned(),
                                     ));
                                 }
 
-                                builder.version = Some(feat_vers.into());
+                                builder.version = Some(feat_vers.clone().into_owned());
                             }
-                            ("name", toml::Value::String(feat_name)) => {
-                                builder.full_name = Some(feat_name.into());
+                            ("name", DeValue::String(feat_name)) => {
+                                builder.full_name = Some(feat_name.clone().into_owned());
                             }
-                            ("fallback-names", toml::Value::Array(values)) => {
+                            ("fallback-names", DeValue::Array(values)) => {
                                 let key = format!("{p_key}.{name}.{version_feature}");
                                 builder.fallback_names = Some(Self::parse_name_list(&key, values)?);
                             }
-                            ("optional", &toml::Value::Boolean(optional)) => {
+                            ("optional", &DeValue::Boolean(optional)) => {
                                 builder.optional = Some(optional);
                             }
                             _ => {
                                 return Err(MetadataError::UnexpectedVersionSetting(
                                     format!("{p_key}.{name}"),
                                     k.to_owned(),
-                                    v.type_str().to_owned(),
+                                    v.as_ref().type_str().to_owned(),
                                 ));
                             }
                         }
@@ -333,7 +343,7 @@ impl MetaData {
                     return Err(MetadataError::UnexpectedKey(
                         format!("{p_key}.{name}"),
                         key.to_owned(),
-                        value.type_str().to_owned(),
+                        value.as_ref().type_str().to_owned(),
                     ));
                 }
             }
@@ -341,12 +351,13 @@ impl MetaData {
         Ok(())
     }
 
-    fn parse_name_list(key: &str, values: &[Value]) -> Result<Vec<String>, MetadataError> {
+    fn parse_name_list(key: &str, values: &DeArray<'_>) -> Result<Vec<String>, MetadataError> {
         values
             .iter()
             .enumerate()
             .map(|(i, value)| {
                 value
+                    .as_ref()
                     .as_str()
                     .map(|x| x.to_owned())
                     .ok_or_else(|| MetadataError::NotString(format!("{key}[{i}]")))
