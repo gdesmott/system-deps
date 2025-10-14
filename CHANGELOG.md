@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.6](https://github.com/gdesmott/system-deps/compare/v7.0.5...v7.0.6) - 2025-10-14
+
+### Fixed
+
+- fix new clippy warnings
+- fix new clippy warnings
+
+### Other
+
+- Remove dependency on serde
+- Update to `toml` 0.9
+- add missing const
+- add missing backticks in doc
+
 ## [7.0.5](https://github.com/gdesmott/system-deps/compare/v7.0.4...v7.0.5) - 2025-05-22
 
 ### Other
