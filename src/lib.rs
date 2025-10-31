@@ -1273,17 +1273,12 @@ fn split_string(value: &str) -> Vec<String> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 enum BuildInternal {
     Auto,
     Always,
+    #[default]
     Never,
-}
-
-impl Default for BuildInternal {
-    fn default() -> Self {
-        Self::Never
-    }
 }
 
 impl FromStr for BuildInternal {
