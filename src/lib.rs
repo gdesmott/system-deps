@@ -213,7 +213,7 @@ extern crate lazy_static;
 mod test;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fmt;
 use std::ops::RangeBounds;
@@ -299,7 +299,7 @@ impl fmt::Display for Error {
 #[derive(Debug, Default)]
 /// All the system dependencies retrieved by [`Config::probe`].
 pub struct Dependencies {
-    libs: HashMap<String, Library>,
+    libs: BTreeMap<String, Library>,
 }
 
 impl Dependencies {
