@@ -56,7 +56,7 @@ fn toml(
     // Hold the lock for the entire probe since it depends on PKG_CONFIG_PATH
     let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
     let libs = create_config(path, env).probe_full()?;
-    let flags = libs.gen_flags()?;
+    let flags = libs.gen_flags(None)?;
     Ok((libs, flags))
 }
 
