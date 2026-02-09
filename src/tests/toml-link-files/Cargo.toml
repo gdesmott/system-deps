@@ -1,0 +1,5 @@
+[package]
+name = "toml-link-files"
+
+[package.metadata.system-deps]
+testlinkfiles = { version = "1", feature = "test-feature" }
