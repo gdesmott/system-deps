@@ -53,7 +53,7 @@ fn toml(
     env: Vec<(&'static str, &'static str)>,
 ) -> Result<(Dependencies, BuildFlags), Error> {
     let libs = create_config(path, env).probe_full()?;
-    let flags = libs.gen_flags()?;
+    let flags = libs.gen_flags(None)?;
     Ok((libs, flags))
 }
 
