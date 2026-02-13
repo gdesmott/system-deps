@@ -12,13 +12,21 @@ use crate::Dependencies;
 
 use super::{
     BuildFlags, BuildInternalClosureError, Config, EnvVariables, Error, InternalLib, Library,
+    Source,
 };
 
 lazy_static! {
     static ref LOCK: Mutex<()> = Mutex::new(());
 }
-
 fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
+    create_config_impl(path, env, None)
+}
+
+fn create_config_impl(
+    path: &str,
+    env: Vec<(&'static str, &'static str)>,
+    target: Option<&str>,
+) -> Config {
     {
         // PKG_CONFIG_PATH is read by pkg-config, so we need to actually change the env
         let _l = LOCK.lock();
@@ -26,6 +34,13 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
             "PKG_CONFIG_PATH",
             env::current_dir().unwrap().join("src").join("tests"),
         );
+
+        // TARGET and PKG_CONFIG_ALLOW_CROSS are also read by pkg-config, so we need to actually
+        // change the env
+        if let Some(target) = target {
+            env::set_var("TARGET", target);
+            env::set_var("PKG_CONFIG_ALLOW_CROSS", "true");
+        }
     }
 
     let mut hash = HashMap::new();
@@ -53,7 +68,17 @@ fn toml(
     env: Vec<(&'static str, &'static str)>,
 ) -> Result<(Dependencies, BuildFlags), Error> {
     let libs = create_config(path, env).probe_full()?;
-    let flags = libs.gen_flags()?;
+    let flags = libs.gen_flags(None)?;
+    Ok((libs, flags))
+}
+
+fn toml_with_target(
+    path: &str,
+    env: Vec<(&'static str, &'static str)>,
+    target: &str,
+) -> Result<(Dependencies, BuildFlags), Error> {
+    let libs = create_config_impl(path, env, Some(target)).probe_full()?;
+    let flags = libs.gen_flags(Some(target))?;
     Ok((libs, flags))
 }
 
@@ -1267,4 +1292,164 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIBWITHRPATH_LINK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
 "#,
     );
+}
+
+#[test]
+fn link_files_from_pkg_config() {
+    let (libraries, flags) = toml_with_target(
+        "toml-link-files",
+        vec![("SYSTEM_DEPS_TESTLINKFILES_LINK", "static")],
+        "x86_64-unknown-linux-musl",
+    )
+    .unwrap();
+
+    let testlib = libraries.get_by_name("testlinkfiles").unwrap();
+    assert!(testlib.statik);
+    assert!(
+        !testlib.link_files.is_empty(),
+        "link_files should be populated from pkg-config"
+    );
+
+    assert_flags(
+        flags,
+        r#"cargo:rustc-link-search=native=./src/tests/lib
+cargo:rustc-link-lib=static=teststatic
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_LDFLAGS
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLINKFILES_SEARCH_NATIVE
+"#,
+    );
+}
+
+#[test]
+fn link_files_generates_flags() {
+    let lib = Library {
+        name: "testlib".to_string(),
+        source: Source::PkgConfig,
+        version: "1.2.3".to_string(),
+        link_paths: vec![],
+        framework_paths: vec![],
+        include_paths: vec![],
+        libs: vec![],
+        frameworks: vec![],
+        defines: HashMap::new(),
+        statik: true,
+        link_files: vec![
+            PathBuf::from("/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-boost-static-x86_64-unknown-linux-musl-1.87.0/lib/libboost_container.a"),
+            PathBuf::from("/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-boost-static-x86_64-unknown-linux-musl-1.87.0/lib/libboost_context.a"),
+        ],
+        ld_args: vec![],
+    };
+
+    let mut deps = Dependencies::default();
+    deps.add("testlib", lib);
+
+    let flags = deps.gen_flags(Some("x86_64-unknown-linux-musl")).unwrap();
+
+    assert_flags(
+        flags,
+        r#"cargo:rustc-link-search=native=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-boost-static-x86_64-unknown-linux-musl-1.87.0/lib
+cargo:rustc-link-search=native=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-boost-static-x86_64-unknown-linux-musl-1.87.0/lib
+cargo:rustc-link-lib=static=boost_container
+cargo:rustc-link-lib=static=boost_context
+cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LDFLAGS
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+"#,
+    );
+}
+
+#[test]
+fn link_files_empty_without_target() {
+    let lib = Library {
+        name: "testlib".to_string(),
+        source: Source::PkgConfig,
+        version: "1.2.3".to_string(),
+        link_paths: vec![],
+        framework_paths: vec![],
+        include_paths: vec![],
+        libs: vec![],
+        frameworks: vec![],
+        defines: HashMap::new(),
+        statik: false,
+        link_files: vec![PathBuf::from("/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-boost-1.87.0/lib/libboost_thread.so.1.87.0")],
+        ld_args: vec![],
+    };
+
+    let mut deps = Dependencies::default();
+    deps.add("testlib", lib);
+
+    let flags = deps.gen_flags(None).unwrap();
+
+    assert_flags(
+        flags,
+        r#"cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_INCLUDE
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LDFLAGS
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LIB_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_LINK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_NO_PKG_CONFIG
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
+cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
+"#,
+    );
+}
+
+// Copied from pkg-config-rs:
+// https://github.com/rust-lang/pkg-config-rs/blob/057321c21329ead3ec7d502a8e730a5fd7a271e9/src/lib.rs#L1168
+fn test_library_filename(target: &str, filename: &str) {
+    assert_eq!(
+        super::extract_lib_from_filename(target, filename),
+        Some("foo")
+    );
+}
+
+#[test]
+fn link_filename_linux() {
+    let target = "x86_64-unknown-linux-gnu";
+    test_library_filename(target, "libfoo.a");
+    test_library_filename(target, "libfoo.so");
+}
+
+#[test]
+fn link_filename_apple() {
+    let target = "x86_64-apple-darwin";
+    test_library_filename(target, "libfoo.a");
+    test_library_filename(target, "libfoo.so");
+    test_library_filename(target, "libfoo.dylib");
+}
+
+#[test]
+fn link_filename_msvc() {
+    let target = "x86_64-pc-windows-msvc";
+    // static and dynamic libraries have the same .lib suffix
+    test_library_filename(target, "foo.lib");
+}
+
+#[test]
+fn link_filename_mingw() {
+    let target = "x86_64-pc-windows-gnu";
+    test_library_filename(target, "foo.lib");
+    test_library_filename(target, "libfoo.a");
+    test_library_filename(target, "foo.dll");
+    test_library_filename(target, "foo.dll.a");
 }
