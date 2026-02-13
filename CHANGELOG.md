@@ -6,6 +6,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.8](https://github.com/gdesmott/system-deps/compare/v7.0.7...v7.0.8) - 2026-02-13
+
+### Other
+
+- add CLAUDE.md
+
 ## [7.0.7](https://github.com/gdesmott/system-deps/compare/v7.0.6...v7.0.7) - 2025-10-31
 
 ### Fixed
