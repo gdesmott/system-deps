@@ -339,6 +339,11 @@ impl MetaData {
 
                     dep.version_overrides.push(builder.build()?);
                 }
+                ("url", DeValue::String(_)) => {}
+                ("checksum", DeValue::String(_)) => {}
+                ("paths", DeValue::Array(_)) => {}
+                ("provides", DeValue::Array(_)) => {}
+                ("follows", DeValue::String(_)) => {}
                 _ => {
                     return Err(MetadataError::UnexpectedKey(
                         format!("{p_key}.{name}"),
