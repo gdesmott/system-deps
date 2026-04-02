@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.8](https://github.com/gdesmott/system-deps/compare/v7.0.7...v7.0.8) - 2026-04-02
+
+### Other
+
+- bump toml to version 1
+- bump release-drafter/release-drafter v5 to v6
+- bump codecov/codecov-action v4 to v5
+- pin taiki-e/install-action to v2
+- replace deprecated actions-rs/* with dtolnay/rust-toolchain and direct cargo commands
+- add CLAUDE.md
+
 ## [7.0.7](https://github.com/gdesmott/system-deps/compare/v7.0.6...v7.0.7) - 2025-10-31
 
 ### Fixed
