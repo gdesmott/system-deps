@@ -213,12 +213,13 @@ extern crate lazy_static;
 mod test;
 
 use heck::{ToShoutySnakeCase, ToSnakeCase};
-use std::collections::{BTreeMap, HashMap};
-use std::env;
-use std::fmt;
-use std::ops::RangeBounds;
-use std::path::{Path, PathBuf};
-use std::str::FromStr;
+use std::{
+    collections::{BTreeMap, HashMap},
+    env, fmt,
+    ops::RangeBounds,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 mod metadata;
 use metadata::MetaData;

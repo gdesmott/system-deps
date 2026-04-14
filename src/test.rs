@@ -1,10 +1,12 @@
 use itertools::Itertools;
-use std::cell::Cell;
-use std::collections::HashMap;
-use std::env;
-use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::sync::Mutex;
+use std::{
+    cell::Cell,
+    collections::HashMap,
+    env,
+    path::{Path, PathBuf},
+    rc::Rc,
+    sync::Mutex,
+};
 
 use assert_matches::assert_matches;
 
