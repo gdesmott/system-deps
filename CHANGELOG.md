@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [7.0.9](https://github.com/gdesmott/system-deps/compare/v7.0.8...v7.0.9) - 2026-04-14
+
+### Other
+
+- add rustfmt.toml
+- merge imports
+
 ## [7.0.8](https://github.com/gdesmott/system-deps/compare/v7.0.7...v7.0.8) - 2026-04-02
 
 ### Other
