@@ -2,8 +2,10 @@
 
 use std::{fmt, fs, io::Read, path::Path};
 
-use toml::de::{DeArray, DeTable, DeValue};
-use toml::Spanned;
+use toml::{
+    de::{DeArray, DeTable, DeValue},
+    Spanned,
+};
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct MetaData {
