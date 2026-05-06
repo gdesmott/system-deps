@@ -1,0 +1,40 @@
+[package]
+name = "system-deps-meta"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+keywords.workspace = true
+edition.workspace = true
+documentation.workspace = true
+
+[dependencies]
+cargo_metadata = "0.20"
+serde = "1.0"
+toml = "1"
+cfg-expr = { version = ">= 0.17, < 0.21", features = ["targets"] }
+sha256 = { version = "1.6", optional = true }
+attohttpc = { version = "0.29", optional = true }
+flate2 = { version = "1.1", optional = true }
+liblzma = { version = "0.4", default-features = false, optional = true }
+tar = { version = "0.4", optional = true }
+which = { version = "8", optional = true }
+zip = { version = "2.4", default-features = false, features = ["aes-crypto", "bzip2", "deflate64", "deflate", "lzma", "time", "zstd"], optional = true }
+[target.'cfg(target_os = "macos")'.dependencies]
+# TODO: switch to a released `pkg-extractor` once the `liblzma` backend
+# migration (commit a1fdfd4 on thiblahute/pkg_extractor main) is cut as
+# a crates.io release; then this can become a plain `version = "..."`.
+pkg-extractor = { git = "https://github.com/thiblahute/pkg_extractor", branch = "main", optional = true }
+[target.'cfg(target_os = "windows")'.dependencies]
+# TODO: switch to upstream `inno` once the `extract` feature lands there;
+# then this can become a plain `version = "..."` entry from crates.io.
+inno = { git = "https://github.com/thiblahute/inno", branch = "extract+lzma-rust2", default-features = false, features = ["extract"], optional = true }
+
+[features]
+binary = ["dep:sha256", "dep:attohttpc", "dep:which"]
+gz = ["dep:flate2", "dep:tar"]
+xz = ["dep:liblzma", "dep:tar"]
+zip = ["dep:zip"]
+pkg = ["dep:pkg-extractor"]
+inno = ["dep:inno"]
+test = []
