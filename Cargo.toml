@@ -29,6 +29,5 @@ heck = "0.5"
 cfg-expr = { version = ">= 0.17, < 0.21", features = ["targets"] }
 
 [dev-dependencies]
-lazy_static = "1"
 itertools = "0.14"
 assert_matches = "1.5"
