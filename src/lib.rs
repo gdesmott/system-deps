@@ -482,14 +482,27 @@ impl Dependencies {
             // `rustc-link-lib` directives. The target triple determines which prefix and suffix to
             // strip.
             if let Some(target) = target {
+                let mut seen_dirs = Vec::new();
+
                 for path in &lib.link_files {
                     if let (Some(dir), Some(file_name)) = (path.parent(), path.file_name()) {
                         let filename = file_name.to_string_lossy();
+                        let mut new = false;
+
+                        if !seen_dirs.contains(&dir) {
+                            new = true;
+                            seen_dirs.push(dir);
+                        }
 
                         // Try to extract the library linking name from the filename, e.g.
                         // libboost_context.a -> boost_context
                         if let Some(lib_name) = extract_lib_from_filename(target, &filename) {
-                            flags.add(BuildFlag::SearchNative(dir.to_string_lossy().to_string()));
+                            if new {
+                                flags.add(BuildFlag::SearchNative(
+                                    dir.to_string_lossy().to_string(),
+                                ));
+                            }
+
                             flags.add(BuildFlag::Lib(lib_name.to_string(), lib.statik));
                         }
                     }

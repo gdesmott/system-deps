@@ -1359,7 +1359,6 @@ fn link_files_generates_flags() {
     assert_flags(
         flags,
         r#"cargo:rustc-link-search=native=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-boost-static-x86_64-unknown-linux-musl-1.87.0/lib
-cargo:rustc-link-search=native=/nix/store/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee-boost-static-x86_64-unknown-linux-musl-1.87.0/lib
 cargo:rustc-link-lib=static=boost_container
 cargo:rustc-link-lib=static=boost_context
 cargo:rerun-if-env-changed=SYSTEM_DEPS_BUILD_INTERNAL
