@@ -24,6 +24,8 @@ fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
     create_config_impl(path, env, None)
 }
 
+// NOTE: You must ensure you call env::remove_var on `TARGET` and `PKG_CONFIG_ALLOW_CROSS` after you
+// invoke pkg-config if `target` is `Some`!
 fn create_config_impl(
     path: &str,
     env: Vec<(&'static str, &'static str)>,
@@ -80,7 +82,12 @@ fn toml_with_target(
     target: &str,
 ) -> Result<(Dependencies, BuildFlags), Error> {
     let libs = create_config_impl(path, env, Some(target)).probe_full()?;
+
+    env::remove_var("TARGET");
+    env::remove_var("PKG_CONFIG_ALLOW_CROSS");
+
     let flags = libs.gen_flags(Some(target))?;
+
     Ok((libs, flags))
 }
 
