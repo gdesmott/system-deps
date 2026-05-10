@@ -444,6 +444,13 @@ impl Dependencies {
         }
     }
 
+    /// Generate cargo build flags for all probed libraries.
+    ///
+    /// When `target` is `Some`, absolute library paths in `Library::link_files` are converted into
+    /// `rustc-link-search` + `rustc-link-lib`, using the target triple to strip the platform-
+    /// specific prefix and suffix. When `None`, `link_files` is ignored.
+    ///
+    /// Primarily used when cross compiling and linking libraries via absolute paths.
     fn gen_flags(&self, target: Option<&str>) -> Result<BuildFlags, Error> {
         let mut flags = BuildFlags::new();
         let mut include_paths = Vec::new();
@@ -471,10 +478,16 @@ impl Dependencies {
                 ))
             });
 
+            // Convert absolute paths in pkg-config's `Libs:` into `rustc-link-search=native` +
+            // `rustc-link-lib` directives. The target triple determines which prefix and suffix to
+            // strip.
             if let Some(target) = target {
                 for path in &lib.link_files {
                     if let (Some(dir), Some(file_name)) = (path.parent(), path.file_name()) {
                         let filename = file_name.to_string_lossy();
+
+                        // Try to extract the library linking name from the filename, e.g.
+                        // libboost_context.a -> boost_context
                         if let Some(lib_name) = extract_lib_from_filename(target, &filename) {
                             flags.add(BuildFlag::SearchNative(dir.to_string_lossy().to_string()));
                             flags.add(BuildFlag::Lib(lib_name.to_string(), lib.statik));
