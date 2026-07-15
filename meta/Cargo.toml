@@ -1,0 +1,36 @@
+[package]
+name = "system-deps-meta"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+keywords.workspace = true
+edition.workspace = true
+documentation.workspace = true
+
+[dependencies]
+cargo_metadata.workspace = true
+serde.workspace = true
+toml = { workspace = true, features = ["display", "serde"] }
+cfg-expr.workspace = true
+sha256 = { workspace = true, optional = true }
+attohttpc = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
+lzma-rust2 = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
+which = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
+[target.'cfg(target_os = "macos")'.dependencies]
+pkg-extractor = { workspace = true, optional = true }
+[target.'cfg(target_os = "windows")'.dependencies]
+inno = { workspace = true, optional = true }
+junction = { workspace = true, optional = true }
+
+[features]
+binary = ["dep:sha256", "dep:attohttpc", "dep:which", "dep:junction"]
+gz = ["dep:flate2", "dep:tar"]
+xz = ["dep:lzma-rust2", "dep:tar"]
+zip = ["dep:zip"]
+pkg = ["dep:pkg-extractor"]
+inno = ["dep:inno"]
+test = []

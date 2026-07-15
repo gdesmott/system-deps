@@ -1,0 +1,8 @@
+[package]
+name = "toml-cfg-in-dep"
+
+[package.metadata.system-deps.testlib]
+version = "1"
+name = "testlib"
+'cfg(target_os = "linux")' = { url = "https://example.com/linux.tar.xz", checksum = "abc123" }
+'cfg(target_os = "macos")' = { url = "https://example.com/macos.tar.xz", checksum = "def456" }
