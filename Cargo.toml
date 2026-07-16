@@ -3,7 +3,7 @@ members = ["meta"]
 exclude = ["target"]
 
 [workspace.package]
-version = "7.0.8"
+version = "7.0.9"
 authors = [
     "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
     "Josh Triplett <josh@joshtriplett.org>",
