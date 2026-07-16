@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [7.0.9](https://github.com/gdesmott/system-deps/compare/system-deps-v7.0.8...system-deps-v7.0.9) - 2026-07-16
+## [8.0.0](https://github.com/gdesmott/system-deps/compare/system-deps-v7.0.8...system-deps-v8.0.0) - 2026-07-16
 
 ### Other
 
