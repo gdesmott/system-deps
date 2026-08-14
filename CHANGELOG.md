@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0](https://github.com/gdesmott/system-deps/compare/system-deps-v8.0.0...system-deps-v9.0.0) - 2026-08-14
+
+### Fixed
+
+- unset TARGET and PKG_CONFIG_ALLOW_CROSS after pkg-config has read them
+- don't emit duplicate rustc-link-search lines
+- add some information about what's happening with the new target arg to gen_flags
+
+### Other
+
+- Reuse pkg_config v0.3.34's Library::extract_lib_from_filename
+- Test static/target build with link_files
+- Support pkg-config-rs link_files on static/target builds
+- Remove release-drafter (superseded by release-plz)
+- Fix broken changelog compare links for 8.0.0
+
 ## [8.0.0](https://github.com/gdesmott/system-deps/compare/v7.0.8...system-deps-v8.0.0) - 2026-07-16
 
 ### Other

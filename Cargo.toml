@@ -3,7 +3,7 @@ members = ["meta"]
 exclude = ["target"]
 
 [workspace.package]
-version = "8.0.0"
+version = "9.0.0"
 authors = [
     "Guillaume Desmottes <guillaume.desmottes@collabora.com>",
     "Josh Triplett <josh@joshtriplett.org>",
@@ -23,7 +23,7 @@ rust-version = "1.78.0"
 documentation = "https://docs.rs/system-deps/"
 
 [workspace.dependencies]
-system-deps-meta = { path = "./meta", version = "8.0.0" }
+system-deps-meta = { path = "./meta", version = "9.0.0" }
 assert_matches = "1.5"
 attohttpc = "0.29"
 cargo_metadata = "0.20"

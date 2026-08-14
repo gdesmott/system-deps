@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.0](https://github.com/gdesmott/system-deps/compare/system-deps-meta-v8.0.0...system-deps-meta-v9.0.0) - 2026-08-14
+
+### Other
+
+- Fix broken changelog compare links for 8.0.0
+
 ## [8.0.0](https://github.com/gdesmott/system-deps/releases/tag/system-deps-meta-v8.0.0) - 2026-07-16
 
 ### Other
