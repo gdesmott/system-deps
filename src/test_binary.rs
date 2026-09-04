@@ -18,7 +18,7 @@ use system_deps_meta::{
     BUILD_MANIFEST, TARGET_DIR,
 };
 
-use crate::{BuildInternalClosureError, Config, EnvVariables, Library};
+use crate::{BuildInternalClosureError, Config, Dependencies, EnvVariables, Library};
 
 #[derive(Debug)]
 struct Test {
@@ -567,6 +567,176 @@ fn probe() -> Result<(), Error> {
     assert!(testlib.statik);
 
     Ok(())
+}
+
+fn provider_paths() -> &'static Paths {
+    static PATHS: OnceLock<Paths> = OnceLock::new();
+    PATHS.get_or_init(|| {
+        let pkgs = vec![
+            Package {
+                name: "provider",
+                deps: vec!["other"],
+                config: toml::toml![
+                    [package.metadata.system-deps.provider]
+                    name = "provider"
+                    url = "$TEST"
+                    paths = [ "lib/pkgconfig" ]
+                    provides = [ "dep", "wild*" ]
+                ],
+            },
+            // The longest matching prefix wins.
+            Package {
+                name: "other",
+                deps: vec![],
+                config: toml::toml![
+                    [package.metadata.system-deps.other]
+                    name = "other"
+                    url = "$TEST"
+                    paths = [ "lib/pkgconfig" ]
+                    provides = [ "wildcard*" ]
+                ],
+            },
+        ];
+        Test::new("link_mode", pkgs)
+            .expect("failed to write test metadata")
+            .paths
+    })
+}
+
+fn config_with(vars: HashMap<&'static str, String>) -> Config {
+    let mut config = Config::new_with_env(EnvVariables::Mock(vars));
+    config.paths = provider_paths();
+    config
+}
+
+#[test]
+fn provider() {
+    let paths = provider_paths();
+    assert_eq!(paths.provider("provider"), Some("provider"));
+    assert_eq!(paths.provider("other"), Some("other"));
+    assert_eq!(paths.provider("dep"), Some("provider"));
+    // Longest prefix wins.
+    assert_eq!(paths.provider("wildcard"), Some("other"));
+    assert_eq!(paths.provider("wildlife"), Some("provider"));
+    assert_eq!(paths.provider("unrelated"), None);
+}
+
+#[test]
+fn is_static() {
+    let empty = config_with(HashMap::new());
+    assert!(empty.is_static("provider"));
+    assert!(empty.is_static("dep"));
+    assert!(empty.is_static("wildcard"));
+    assert!(!empty.is_static("unrelated"));
+
+    let provided = config_with(HashMap::from([(
+        "SYSTEM_DEPS_PROVIDER_LINK",
+        "dynamic".into(),
+    )]));
+    assert!(!provided.is_static("provider"));
+    assert!(!provided.is_static("dep"));
+    assert!(!provided.is_static("wildlife"));
+    // `wildcard` is served by `other`, not `provider`.
+    assert!(provided.is_static("wildcard"));
+
+    let provided = config_with(HashMap::from([(
+        "SYSTEM_DEPS_PROVIDER_LINK",
+        "static".into(),
+    )]));
+    assert!(provided.is_static("dep"));
+    assert!(!provided.is_static("unrelated"));
+
+    let global = config_with(HashMap::from([("SYSTEM_DEPS_LINK", "static".into())]));
+    assert!(global.is_static("dep"));
+    assert!(global.is_static("unrelated"));
+
+    let per_pkg = config_with(HashMap::from([
+        ("SYSTEM_DEPS_PROVIDER_LINK", "dynamic".into()),
+        ("SYSTEM_DEPS_DEP_LINK", "static".into()),
+    ]));
+    assert!(!per_pkg.is_static("provider"));
+    assert!(per_pkg.is_static("dep"));
+}
+
+#[test]
+fn no_prebuilt_link_mode() {
+    let config = config_with(HashMap::from([("SYSTEM_DEPS_DEP_NO_PREBUILT", "1".into())]));
+    // `dep` is not served by the bundle so it defaults to dynamic linking.
+    assert!(config.query_path("dep").is_none());
+    assert!(config.provider("dep").is_none());
+    assert!(!config.is_static("dep"));
+
+    // An explicit link mode still wins.
+    let config = config_with(HashMap::from([
+        ("SYSTEM_DEPS_DEP_NO_PREBUILT", "1".into()),
+        ("SYSTEM_DEPS_LINK", "static".into()),
+    ]));
+    assert!(config.is_static("dep"));
+}
+
+#[test]
+fn binary_rpath_arg() {
+    let linux = || {
+        config_with(HashMap::from([
+            ("TARGET", "x86_64-unknown-linux-gnu".into()),
+            ("SYSTEM_DEPS_PROVIDER_LINK", "dynamic".into()),
+        ]))
+    };
+    assert_eq!(
+        linux().binary_rpath_arg("dep", "lib").as_deref(),
+        Some("cargo:rustc-link-arg=-Wl,--disable-new-dtags,-rpath,$ORIGIN/lib")
+    );
+
+    let mac = config_with(HashMap::from([
+        ("TARGET", "aarch64-apple-darwin".into()),
+        ("SYSTEM_DEPS_PROVIDER_LINK", "dynamic".into()),
+    ]));
+    assert_eq!(
+        mac.binary_rpath_arg("dep", "lib").as_deref(),
+        Some("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/lib")
+    );
+
+    // Statically linked bundles and packages not served by one need no rpath.
+    let statik = config_with(HashMap::from([(
+        "TARGET",
+        "x86_64-unknown-linux-gnu".into(),
+    )]));
+    assert!(statik.binary_rpath_arg("dep", "lib").is_none());
+    assert!(linux().binary_rpath_arg("unrelated", "lib").is_none());
+}
+
+#[test]
+fn link_modes_must_match() {
+    let config = config_with(HashMap::new());
+    let lib = |name: &str, statik: bool| {
+        let mut lib = Library::from_env_variables(name);
+        lib.statik = statik;
+        lib
+    };
+
+    let mut libs = Dependencies::default();
+    libs.add("provider", lib("provider", true));
+    libs.add("dep", lib("dep", true));
+    assert!(config.check_link_modes(&libs).is_ok());
+
+    libs.add("wildlife", lib("wildlife", false));
+    assert!(matches!(
+        config.check_link_modes(&libs),
+        Err(crate::Error::LinkModeMismatch(_, _))
+    ));
+
+    // A package opted out of the bundle is a system dependency and doesn't have
+    // to match the bundle's link mode.
+    let config = config_with(HashMap::from([("SYSTEM_DEPS_DEP_NO_PREBUILT", "1".into())]));
+    let mut libs = Dependencies::default();
+    libs.add("provider", lib("provider", true));
+    libs.add("dep", lib("dep", false));
+    assert!(config.check_link_modes(&libs).is_ok());
+
+    let mut libs = Dependencies::default();
+    libs.add("provider", lib("provider", true));
+    libs.add("unrelated", lib("unrelated", false));
+    assert!(config.check_link_modes(&libs).is_ok());
 }
 
 #[test]
