@@ -931,44 +931,46 @@ impl Config {
             }
 
             // Pick the highest feature enabled version
-            let version;
-            let lib_name;
-            let fallback_lib_names;
-            let optional;
-            if enabled_feature_overrides.is_empty() {
-                version = dep.version.as_deref();
-                lib_name = dep.lib_name();
-                fallback_lib_names = dep.fallback_names.as_deref().unwrap_or(&[]);
-                optional = dep.optional;
-            } else {
-                enabled_feature_overrides.sort_by(|a, b| {
-                    fn min_version(r: metadata::VersionRange<'_>) -> &str {
-                        match r.start_bound() {
-                            std::ops::Bound::Unbounded => unreachable!(),
-                            std::ops::Bound::Excluded(_) => unreachable!(),
-                            std::ops::Bound::Included(b) => b,
+
+            let (version, lib_name, fallback_lib_names, optional) =
+                if enabled_feature_overrides.is_empty() {
+                    (
+                        dep.version.as_deref(),
+                        dep.lib_name(),
+                        dep.fallback_names.as_deref().unwrap_or(&[]),
+                        dep.optional,
+                    )
+                } else {
+                    enabled_feature_overrides.sort_by(|a, b| {
+                        fn min_version(r: metadata::VersionRange<'_>) -> &str {
+                            match r.start_bound() {
+                                std::ops::Bound::Unbounded => unreachable!(),
+                                std::ops::Bound::Excluded(_) => unreachable!(),
+                                std::ops::Bound::Included(b) => b,
+                            }
                         }
-                    }
 
-                    let a = min_version(metadata::parse_version(&a.version));
-                    let b = min_version(metadata::parse_version(&b.version));
+                        let a = min_version(metadata::parse_version(&a.version));
+                        let b = min_version(metadata::parse_version(&b.version));
 
-                    version_compare::compare(a, b)
-                        .expect("failed to compare versions")
-                        .ord()
-                        .expect("invalid version")
-                });
-                let highest = enabled_feature_overrides.into_iter().next_back().unwrap();
+                        version_compare::compare(a, b)
+                            .expect("failed to compare versions")
+                            .ord()
+                            .expect("invalid version")
+                    });
+                    let highest = enabled_feature_overrides.into_iter().next_back().unwrap();
 
-                version = Some(highest.version.as_str());
-                lib_name = highest.name.as_deref().unwrap_or(dep.lib_name());
-                fallback_lib_names = highest
-                    .fallback_names
-                    .as_deref()
-                    .or(dep.fallback_names.as_deref())
-                    .unwrap_or(&[]);
-                optional = highest.optional.unwrap_or(dep.optional);
-            };
+                    (
+                        Some(highest.version.as_str()),
+                        highest.name.as_deref().unwrap_or(dep.lib_name()),
+                        highest
+                            .fallback_names
+                            .as_deref()
+                            .or(dep.fallback_names.as_deref())
+                            .unwrap_or(&[]),
+                        highest.optional.unwrap_or(dep.optional),
+                    )
+                };
 
             let version = version.ok_or_else(|| {
                 Error::InvalidMetadata(format!("No version defined for {}", dep.key))
