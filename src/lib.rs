@@ -10,7 +10,7 @@
 //!
 //! ```toml
 //! [build-dependencies]
-//! system-deps = "7.0"
+//! system-deps = "9.0"
 //! ```
 //!
 //! Then, to declare a dependency on `testlib >= 1.2`
