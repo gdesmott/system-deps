@@ -236,19 +236,25 @@ impl Paths {
     /// Returns the list of paths for a certain package. Matches wildcards but they never have
     /// priority over explicit urls or follows, even if they are defined higher in the hierarchy.
     pub fn get(&self, key: &str) -> Option<&Vec<PathBuf>> {
-        if let Some(paths) = self.paths.get(key) {
-            return Some(paths);
-        };
+        self.provider(key).and_then(|p| self.paths.get(p))
+    }
+
+    /// Name of the package whose prebuilt binaries provide `key`, if any.
+    pub fn provider(&self, key: &str) -> Option<&str> {
+        if let Some(provider) = self.paths.get_key_value(key) {
+            return Some(provider.0.as_str());
+        }
 
         if let Some(follows) = self.follows.get(key) {
-            return self.paths.get(follows);
-        };
+            return self.paths.contains_key(follows).then_some(follows.as_str());
+        }
 
-        self.wildcards.iter().find_map(|(k, v)| {
-            key.starts_with(k)
-                .then_some(v)
-                .and_then(|v| self.paths.get(v))
-        })
+        self.wildcards
+            .iter()
+            .find(|(prefix, provider)| {
+                key.starts_with(prefix.as_str()) && self.paths.contains_key(*provider)
+            })
+            .map(|(_, provider)| provider.as_str())
     }
 
     /// Serializes the path list.

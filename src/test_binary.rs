@@ -18,7 +18,7 @@ use system_deps_meta::{
     BUILD_MANIFEST, TARGET_DIR,
 };
 
-use crate::{BuildInternalClosureError, Config, EnvVariables, Library};
+use crate::{BuildInternalClosureError, Config, Dependencies, EnvVariables, Library};
 
 #[derive(Debug)]
 struct Test {
@@ -567,6 +567,93 @@ fn probe() -> Result<(), Error> {
     assert!(testlib.statik);
 
     Ok(())
+}
+
+fn provider_paths() -> &'static Paths {
+    static PATHS: OnceLock<Paths> = OnceLock::new();
+    PATHS.get_or_init(|| {
+        let pkgs = vec![Package {
+            name: "test",
+            deps: vec![],
+            config: toml::toml![
+                [package.metadata.system-deps.test]
+                name = "test"
+                url = "$TEST"
+                paths = [ "lib/pkgconfig" ]
+                provides = [ "dep", "wild*" ]
+            ],
+        }];
+        Test::new("link_mode", pkgs)
+            .expect("failed to write test metadata")
+            .paths
+    })
+}
+
+fn config_with(vars: HashMap<&'static str, String>) -> Config {
+    let mut config = Config::new_with_env(EnvVariables::Mock(vars));
+    config.paths = provider_paths();
+    config
+}
+
+#[test]
+fn link_mode() {
+    let paths = provider_paths();
+    assert_eq!(paths.provider("test"), Some("test"));
+    assert_eq!(paths.provider("dep"), Some("test"));
+    assert_eq!(paths.provider("wildcard"), Some("test"));
+    assert_eq!(paths.provider("unrelated"), None);
+
+    let empty = config_with(HashMap::new());
+    assert!(empty.link_mode("test"));
+    assert!(empty.link_mode("dep"));
+    assert!(empty.link_mode("wildcard"));
+    assert!(!empty.link_mode("unrelated"));
+
+    let provided = config_with(HashMap::from([("SYSTEM_DEPS_TEST_LINK", "dynamic".into())]));
+    assert!(!provided.link_mode("test"));
+    assert!(!provided.link_mode("dep"));
+    assert!(!provided.link_mode("wildcard"));
+
+    let provided = config_with(HashMap::from([("SYSTEM_DEPS_TEST_LINK", "static".into())]));
+    assert!(provided.link_mode("dep"));
+    assert!(!provided.link_mode("unrelated"));
+
+    let global = config_with(HashMap::from([("SYSTEM_DEPS_LINK", "static".into())]));
+    assert!(global.link_mode("dep"));
+    assert!(global.link_mode("unrelated"));
+
+    let per_pkg = config_with(HashMap::from([
+        ("SYSTEM_DEPS_TEST_LINK", "dynamic".into()),
+        ("SYSTEM_DEPS_DEP_LINK", "static".into()),
+    ]));
+    assert!(!per_pkg.link_mode("test"));
+    assert!(per_pkg.link_mode("dep"));
+}
+
+#[test]
+fn link_modes_must_match() {
+    let config = config_with(HashMap::new());
+    let lib = |name: &str, statik: bool| {
+        let mut lib = Library::from_env_variables(name);
+        lib.statik = statik;
+        lib
+    };
+
+    let mut libs = Dependencies::default();
+    libs.add("test", lib("test", true));
+    libs.add("dep", lib("dep", true));
+    assert!(config.check_link_modes(&libs).is_ok());
+
+    libs.add("wildcard", lib("wildcard", false));
+    assert!(matches!(
+        config.check_link_modes(&libs),
+        Err(crate::Error::LinkModeMismatch(_, _))
+    ));
+
+    let mut libs = Dependencies::default();
+    libs.add("test", lib("test", true));
+    libs.add("unrelated", lib("unrelated", false));
+    assert!(config.check_link_modes(&libs).is_ok());
 }
 
 #[test]
