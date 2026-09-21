@@ -1311,23 +1311,32 @@ impl Library {
         f: impl FnOnce() -> Result<R, pkg_config::Error>,
     ) -> Result<R, pkg_config::Error> {
         // Save current PKG_CONFIG_PATH, so we can restore it
-        let prev = env::var("PKG_CONFIG_PATH").ok();
+        let prev =
+            &["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"].map(|var| (var, env::var_os(var)));
 
-        let prev_paths = prev.iter().flat_map(env::split_paths).collect::<Vec<_>>();
-        let joined_paths = pkg_config_paths.join_paths(prev_paths.as_slice());
+        for (var, value) in prev {
+            let Some(value) = value else {
+                continue;
+            };
+            let paths: Vec<_> = env::split_paths(value).collect();
+            let joined = pkg_config_paths.join_paths(&paths);
 
-        // pkg-config 0.29.2 eats `\` while expanding `${pcfiledir}`, producing
-        // corrupt flags (e.g. `C:Userslibpkgconfig`). Forward slashes work on
-        // Windows and avoid this; there `\` is only ever a path separator.
-        #[cfg(windows)]
-        let joined_paths = OsString::from(joined_paths.to_string_lossy().replace('\\', "/"));
+            // pkg-config 0.29.2 eats `\` while expanding `${pcfiledir}`, producing
+            // corrupt flags (e.g. `C:Userslibpkgconfig`). Forward slashes work on
+            // Windows and avoid this; there `\` is only ever a path separator.
+            #[cfg(windows)]
+            let joined = OsString::from(joined.to_string_lossy().replace('\\', "/"));
 
-        env::set_var("PKG_CONFIG_PATH", joined_paths);
+            env::set_var(var, joined);
+        }
 
         let res = f();
 
-        if let Some(prev) = prev {
-            env::set_var("PKG_CONFIG_PATH", prev);
+        for (var, value) in prev {
+            match value {
+                Some(val) => env::set_var(var, val),
+                None => env::remove_var(var),
+            }
         }
 
         res
