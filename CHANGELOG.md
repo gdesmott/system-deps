@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.1](https://github.com/gdesmott/system-deps/compare/system-deps-v9.0.0...system-deps-v9.0.1) - 2026-09-21
+
+### Other
+
+- Fix new clippy warnings
+- Update version number in docs
+
 ## [9.0.0](https://github.com/gdesmott/system-deps/compare/system-deps-v8.0.0...system-deps-v9.0.0) - 2026-08-14
 
 ### Fixed
