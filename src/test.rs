@@ -1125,7 +1125,7 @@ fn static_one_lib() {
     .unwrap();
 
     let testdata = libraries.get_by_name("testdata").unwrap();
-    assert!(testdata.statik == cfg!(feature = "binary"));
+    assert!(!testdata.statik);
 
     let testlib = libraries.get_by_name("teststaticlib").unwrap();
     assert!(testlib.statik);

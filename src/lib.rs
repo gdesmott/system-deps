@@ -197,7 +197,7 @@
 //! You can also use the `SYSTEM_DEPS_BUILD_INTERNAL` environment variable with the same values
 //! defining the behavior for all the dependencies which don't have `SYSTEM_DEPS_$NAME_BUILD_INTERNAL` defined.
 //!
-//! # Static linking
+//! # Linking
 //!
 //! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
 //! Libraries can be statically linked by defining the environment variable `SYSTEM_DEPS_$NAME_LINK=static`.
@@ -205,6 +205,16 @@
 //!
 //! The libraries specified with this option can have any form readable by `pkg-config`, and they will inherit the main libraries'
 //! binary paths if you are using them. If `pkg-config` can't find some entry, it will print a warning but the compilation won't fail.
+//!
+//! Prebuilt binaries are statically linked by default. Set `SYSTEM_DEPS_$NAME_LINK=dynamic` or
+//! `SYSTEM_DEPS_LINK=dynamic` to use dynamic linking instead. `SYSTEM_DEPS_$NAME_LINK` applies to
+//! every package that binary provides through `follows` and wildcard `provides`, so that its
+//! archives and shared libraries are never mixed.
+//!
+//! A dynamically linked bundle is not installed in a system directory, so the final binary has to
+//! be told where to find it. [`Config::print_binary_link_args`] prints the link-search and rpath
+//! flags for it. Call it from the build script of the package that produces the executable or
+//! shared library.
 //!
 //! # Using prebuilt binaries
 //!
@@ -317,6 +327,8 @@ pub enum Error {
     BuildInternalWrongVersion(String, String, String),
     /// The `cfg()` expression used in `Cargo.toml` is currently not supported
     UnsupportedCfg(String),
+    /// Two packages provided by the same prebuilt binary resolved to different link modes
+    LinkModeMismatch(String, String),
 }
 
 impl From<pkg_config::Error> for Error {
@@ -358,6 +370,12 @@ impl fmt::Display for Error {
                 "Internally built {s1} {s2} but minimum required version is {s3}"
             ),
             Self::UnsupportedCfg(s) => write!(f, "Unsupported cfg() expression: {s}"),
+            Self::LinkModeMismatch(name, package) => write!(
+                f,
+                "{package} is provided by {name}, but they resolve to different link modes; \
+                 set {} to link both the same way",
+                EnvVariable::new_link(Some(name)),
+            ),
         }
     }
 }
@@ -366,6 +384,7 @@ impl fmt::Display for Error {
 /// All the system dependencies retrieved by [`Config::probe`].
 pub struct Dependencies {
     libs: BTreeMap<String, Library>,
+    providers: Vec<String>,
 }
 
 impl Dependencies {
@@ -600,6 +619,11 @@ impl Dependencies {
 
         for name in self.libs.keys() {
             EnvVariable::set_rerun_if_changed_for_all_variants(&mut flags, name);
+        }
+
+        for provider in &self.providers {
+            let var = EnvVariable::new_link(Some(provider));
+            flags.add(BuildFlag::RerunIfEnvChanged(var));
         }
 
         Ok(flags)
@@ -874,6 +898,87 @@ impl Config {
             .map_or_else(|| self.paths.get(_pkg), |_| None)
     }
 
+    /// Name of the package whose prebuilt binaries provide `_pkg`, if any.
+    fn provider(&self, _pkg: &str) -> Option<&str> {
+        #[cfg(not(feature = "binary"))]
+        return None;
+
+        #[cfg(feature = "binary")]
+        self.paths.provider(_pkg)
+    }
+
+    /// Check if the dependency should be statically linked.
+    fn link_mode(&self, pkg: &str) -> bool {
+        let provider = self.provider(pkg);
+        let vars = [
+            Some(EnvVariable::new_link(Some(pkg))),
+            provider
+                .filter(|provider| *provider != pkg)
+                .map(|provider| EnvVariable::new_link(Some(provider))),
+            Some(EnvVariable::new_link(None)),
+        ];
+
+        match vars.iter().flatten().find_map(|var| self.env.get(var)) {
+            Some(mode) => mode == "static",
+            None => provider.is_some(),
+        }
+    }
+
+    /// Configure the build to link against the shared libraries of a prebuilt
+    /// binary bundle, which are loaded from `runtime_subdir` next to the built
+    /// artifact at runtime.
+    #[cfg(feature = "binary")]
+    pub fn print_binary_link_args(&self, pkg: &str, runtime_subdir: &str) {
+        println!(
+            "cargo:rerun-if-env-changed={}",
+            EnvVariable::new_link(Some(pkg))
+        );
+        println!("cargo:rerun-if-env-changed={}", EnvVariable::new_link(None));
+
+        let Some(paths) = self.query_path(pkg) else {
+            return;
+        };
+        if self.link_mode(pkg) {
+            return;
+        }
+
+        let target = std::env::var("TARGET")
+            .or_else(|_| std::env::var("HOST"))
+            .unwrap_or_default();
+
+        let rpath_origin = if target.contains("-linux-gnu") || target.contains("-linux-musl") {
+            "$ORIGIN"
+        } else if target.ends_with("-darwin") {
+            "@executable_path"
+        } else {
+            return;
+        };
+
+        let mut lib_dirs: Vec<&std::path::Path> = Vec::new();
+        for path in paths.iter().filter_map(|p| p.parent()) {
+            if path.is_dir() && !lib_dirs.contains(&path) {
+                lib_dirs.push(path);
+            }
+        }
+        for dir in &lib_dirs {
+            let nested = dir
+                .ancestors()
+                .skip(1)
+                .any(|parent| lib_dirs.iter().any(|other| other == &parent));
+            if !nested {
+                println!("cargo:rustc-link-search=native={}", dir.display());
+            }
+        }
+
+        if rpath_origin == "$ORIGIN" {
+            println!(
+                "cargo:rustc-link-arg=-Wl,--disable-new-dtags,-rpath,{rpath_origin}/{runtime_subdir}"
+            );
+        } else {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{rpath_origin}/{runtime_subdir}");
+        }
+    }
+
     fn probe_full(mut self) -> Result<Dependencies, Error> {
         let mut libraries = self.probe_pkg_config()?;
         libraries.override_from_flags(&self.env);
@@ -982,13 +1087,15 @@ impl Config {
             // `Some` only for a dep served by a downloaded binary bundle.
             // TODO: Pass package version here
             let prebuilt_pkg_config_paths = self.query_path(name);
+            let prebuilt = prebuilt_pkg_config_paths.is_some_and(|paths| !paths.is_empty());
 
-            // should the lib be statically linked?
-            let statik = cfg!(feature = "binary")
-                || self
-                    .env
-                    .has_value(&EnvVariable::new_link(Some(name)), "static")
-                || self.env.has_value(&EnvVariable::new_link(None), "static");
+            let statik = self.link_mode(name);
+
+            if let Some(provider) = self.provider(name).filter(|provider| *provider != name) {
+                if !libraries.providers.iter().any(|p| p == provider) {
+                    libraries.providers.push(provider.to_string());
+                }
+            }
 
             let mut library = if self.env.contains(&EnvVariable::new_no_pkg_config(name)) {
                 Library::from_env_variables(name)
@@ -1000,7 +1107,7 @@ impl Config {
                     .print_system_libs(false)
                     .cargo_metadata(false)
                     .range_version(metadata::parse_version(version))
-                    .statik(statik);
+                    .statik(statik || prebuilt);
 
                 // Bundles ship pkg-config 0.29.2, whose `--define-prefix` (on by
                 // default on Windows) miscomputes `prefix` for nested layouts
@@ -1038,7 +1145,27 @@ impl Config {
             libraries.add(name, library);
         }
 
+        self.check_link_modes(&libraries)?;
+
         Ok(libraries)
+    }
+
+    fn check_link_modes(&self, libraries: &Dependencies) -> Result<(), Error> {
+        let mut modes = HashMap::new();
+        for (name, lib) in libraries.iter() {
+            let Some(provider) = self.provider(name) else {
+                continue;
+            };
+            if let Some(statik) = modes.insert(provider, lib.statik) {
+                if statik != lib.statik {
+                    return Err(Error::LinkModeMismatch(
+                        provider.to_string(),
+                        name.to_string(),
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn probe_with_fallback<'a>(
