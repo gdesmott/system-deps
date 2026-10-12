@@ -51,9 +51,14 @@ fn find_workspace_root(dir: &Path) -> Option<PathBuf> {
 /// file. This is needed to obtain metadata from all of dependencies, including
 /// those downstream of the package being compiled.
 ///
-/// If the target directory is not a subfolder of the project it will not be
-/// possible to detect it automatically. In this case, the user will be asked
-/// to specify the `SYSTEM_DEPS_MANIFEST` variable to point to it.
+/// If Cargo's build-dir (the target directory by default) is not a subfolder
+/// of the project it will not be possible to detect it automatically. In this
+/// case, the user will be asked to specify the `SYSTEM_DEPS_BUILD_MANIFEST`
+/// variable to point to it.
+///
+/// When `DOCS_RS` is set, this crate's own manifest is returned instead, since
+/// the metadata is not read in that case and docs.rs builds may have the
+/// target directory outside the project.
 ///
 /// See https://github.com/rust-lang/cargo/issues/3946 for updates on first
 /// class support for finding the workspace root.
@@ -61,6 +66,11 @@ fn manifest() -> PathBuf {
     println!("cargo:rerun-if-env-changed={}", MANIFEST_VAR);
     if let Ok(root) = env::var(MANIFEST_VAR) {
         return PathBuf::from(&root);
+    }
+
+    println!("cargo:rerun-if-env-changed=DOCS_RS");
+    if env::var_os("DOCS_RS").is_some() {
+        return Path::new(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     }
 
     // When build scripts are invoked, they have one argument pointing to the
@@ -74,12 +84,14 @@ fn manifest() -> PathBuf {
     );
     dir.pop();
 
-    let result = find_workspace_root(&dir);
-
-    result.expect(
-        "Error determining the cargo root manifest.\n\
-         Please set `SYSTEM_DEPS_BUILD_MANIFEST` to the path of your project's Cargo.toml",
-    )
+    find_workspace_root(&dir).unwrap_or_else(|| {
+        panic!(
+            "Error determining the cargo root manifest from {}.\n\
+             If Cargo's build-dir (the target directory by default) is outside the project, set \
+             `SYSTEM_DEPS_BUILD_MANIFEST` to the absolute path of your project's Cargo.toml",
+            dir.display()
+        )
+    })
 }
 
 /// Set compile time values for the manifest and target paths, and the compile target.

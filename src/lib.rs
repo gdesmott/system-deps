@@ -265,6 +265,30 @@
 //! follows = "liba" # This name corresponds to the key of the metadata table
 //! ```
 //!
+//! The metadata is read from the whole crate graph, starting at the top level `Cargo.toml`, which is found by looking up
+//! from Cargo's `build-dir` (the target directory by default). If it is outside the project, or inside a different one,
+//! set `SYSTEM_DEPS_BUILD_MANIFEST` to the absolute path of the top level `Cargo.toml`.
+//!
+//! `SYSTEM_DEPS_NO_PREBUILT` disables all the prebuilt binaries, and `SYSTEM_DEPS_$NAME_NO_PREBUILT` those of a single
+//! library and of the libraries that follow it. Disabled binaries are not downloaded, and `pkg-config` looks for the
+//! libraries in its usual paths. The prebuilt paths take precedence over `PKG_CONFIG_PATH` and its target specific
+//! variants, but the binaries are selected for the host, so set `SYSTEM_DEPS_NO_PREBUILT` when cross-compiling to a
+//! target they don't support.
+//!
+//! Builds on [docs.rs](https://docs.rs) have no network access, so when `DOCS_RS` is set no binaries are downloaded and
+//! [`Config::query_path`] returns `None` for every library. Build scripts that rely on the prebuilt binaries should return
+//! early in that case, before probing or querying paths:
+//!
+//! ```no_run
+//! fn main() {
+//!     println!("cargo:rerun-if-env-changed=DOCS_RS");
+//!     if std::env::var("DOCS_RS").is_ok() {
+//!         return;
+//!     }
+//!     system_deps::Config::new().probe().unwrap();
+//! }
+//! ```
+//!
 
 #![deny(missing_docs)]
 
@@ -766,6 +790,20 @@ impl fmt::Display for EnvVariable {
 type FnBuildInternal =
     dyn FnOnce(&str, &str) -> std::result::Result<Library, BuildInternalClosureError>;
 
+/// Restores environment variables to their saved values when dropped.
+struct EnvRestore(Vec<(String, Option<OsString>)>);
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        for (var, value) in &self.0 {
+            match value {
+                Some(val) => env::set_var(var, val),
+                None => env::remove_var(var),
+            }
+        }
+    }
+}
+
 /// Structure used to configure `metadata` before starting to probe for dependencies
 pub struct Config {
     env: EnvVariables,
@@ -1013,9 +1051,11 @@ impl Config {
                     config.arg("--dont-define-prefix");
                 }
 
-                let probe = Library::wrap_pkg_config(prebuilt_pkg_config_paths, || {
-                    Self::probe_with_fallback(&config, lib_name, fallback_lib_names)
-                });
+                let probe = || Self::probe_with_fallback(&config, lib_name, fallback_lib_names);
+                let probe = match prebuilt_pkg_config_paths {
+                    Some(paths) => Library::wrap_pkg_config(paths, probe),
+                    None => probe(),
+                };
 
                 match probe {
                     Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
@@ -1241,6 +1281,14 @@ impl Library {
             }
         };
 
+        // With `--static`, pkgconf repeats the same `-L` for every library in
+        // the `Requires.private` tree, so check each directory and library once.
+        let mut dirs: Vec<&PathBuf> = Vec::new();
+        for dir in &l.link_paths {
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
         let is_static_available = |name: &String| -> bool {
             // MSVC: don't claim a static archive is "available" even when
             // it is on disk. Emitting `cargo:rustc-link-lib=static=...`
@@ -1261,20 +1309,26 @@ impl Library {
                 names
             };
 
-            l.link_paths.iter().any(|dir| {
+            dirs.iter().any(|dir| {
                 let library_exists = libnames.iter().any(|libname| dir.join(libname).exists());
                 library_exists && !system_roots.iter().any(|sys| dir.starts_with(sys))
             })
         };
 
+        let mut cache: HashMap<&String, bool> = HashMap::new();
+        let libs = l
+            .libs
+            .iter()
+            .map(|lib| {
+                let available = *cache.entry(lib).or_insert_with(|| is_static_available(lib));
+                InternalLib::new(lib.to_owned(), available)
+            })
+            .collect();
+
         Self {
             name: name.to_string(),
             source: Source::PkgConfig,
-            libs: l
-                .libs
-                .iter()
-                .map(|lib| InternalLib::new(lib.to_owned(), is_static_available(lib)))
-                .collect(),
+            libs,
             link_paths: l.link_paths,
             link_files: l.link_files,
             include_paths: l.include_paths,
@@ -1316,15 +1370,35 @@ impl Library {
         // and gives `PKG_CONFIG_PATH_FOR_TARGET` precedence over
         // `PKG_CONFIG_PATH`. For this to work inside Nix shells we need to
         // handle the `_FOR_TARGET` variant as well.
-        let prev =
-            &["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"].map(|var| (var, env::var_os(var)));
+        //
+        // The `pkg-config` crate also prefers the target and host specific
+        // variants of `PKG_CONFIG_PATH` when they are set.
+        let mut vars = vec![
+            ("PKG_CONFIG_PATH".to_string(), true),
+            ("PKG_CONFIG_PATH_FOR_TARGET".to_string(), false),
+        ];
+        if let (Ok(target), Ok(host)) = (env::var("TARGET"), env::var("HOST")) {
+            let kind = if host == target { "HOST" } else { "TARGET" };
+            let target_u = target.replace('-', "_");
+            vars.push((format!("PKG_CONFIG_PATH_{}", target), false));
+            if target_u != target {
+                vars.push((format!("PKG_CONFIG_PATH_{}", target_u), false));
+            }
+            vars.push((format!("{}_PKG_CONFIG_PATH", kind), false));
+        }
+        let _restore = EnvRestore(
+            vars.iter()
+                .map(|(var, _)| (var.clone(), env::var_os(var)))
+                .collect(),
+        );
 
-        for (var, value) in prev {
-            let Some(value) = value else {
-                continue;
-            };
-            let paths: Vec<_> = env::split_paths(value).collect();
+        for (var, always) in &vars {
+            let value = env::var_os(var);
+            let paths: Vec<_> = value.iter().flat_map(env::split_paths).collect();
             let joined = pkg_config_paths.join_paths(&paths);
+            if value.is_none() && (!always || joined.is_empty()) {
+                continue;
+            }
 
             // pkg-config 0.29.2 eats `\` while expanding `${pcfiledir}`, producing
             // corrupt flags (e.g. `C:Userslibpkgconfig`). Forward slashes work on
@@ -1335,16 +1409,7 @@ impl Library {
             env::set_var(var, joined);
         }
 
-        let res = f();
-
-        for (var, value) in prev {
-            match value {
-                Some(val) => env::set_var(var, val),
-                None => env::remove_var(var),
-            }
-        }
-
-        res
+        f()
     }
 
     /// Create a `Library` by probing `pkg-config` on an internal directory.
@@ -1357,7 +1422,7 @@ impl Library {
     ///
     /// * `pkg_config_dir`: the directory where the library `.pc` file is located
     /// * `lib`: the name of the library to look for
-    /// * `version`: the minimum version of `lib` required
+    /// * `version`: the minimum version of `lib` required, or `"0"` to accept any version
     ///
     /// # Examples
     ///
@@ -1375,8 +1440,14 @@ impl Library {
         version: &str,
     ) -> Result<Self, BuildInternalClosureError> {
         let pkg_lib = Self::wrap_pkg_config(pkg_config_paths, || {
-            pkg_config::Config::new()
-                .atleast_version(version)
+            // The `pkg-config` crate passes the bare name besides the version
+            // constraint, and with `--static` pkgconf 1.8 then prints the private
+            // flags twice. `>= 0` would only reject empty or non-numeric versions.
+            let mut config = pkg_config::Config::new();
+            if version != "0" {
+                config.atleast_version(version);
+            }
+            config
                 .print_system_libs(false)
                 .cargo_metadata(false)
                 .statik(true)
