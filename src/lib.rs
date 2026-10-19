@@ -1013,9 +1013,11 @@ impl Config {
                     config.arg("--dont-define-prefix");
                 }
 
-                let probe = Library::wrap_pkg_config(prebuilt_pkg_config_paths, || {
-                    Self::probe_with_fallback(&config, lib_name, fallback_lib_names)
-                });
+                let probe = || Self::probe_with_fallback(&config, lib_name, fallback_lib_names);
+                let probe = match prebuilt_pkg_config_paths {
+                    Some(paths) => Library::wrap_pkg_config(paths, probe),
+                    None => probe(),
+                };
 
                 match probe {
                     Ok((lib_name, lib)) => Library::from_pkg_config(lib_name, lib),
@@ -1316,15 +1318,19 @@ impl Library {
         // and gives `PKG_CONFIG_PATH_FOR_TARGET` precedence over
         // `PKG_CONFIG_PATH`. For this to work inside Nix shells we need to
         // handle the `_FOR_TARGET` variant as well.
-        let prev =
-            &["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"].map(|var| (var, env::var_os(var)));
+        let vars = [
+            ("PKG_CONFIG_PATH", true),
+            ("PKG_CONFIG_PATH_FOR_TARGET", false),
+        ];
+        let prev = &vars.map(|(var, _)| (var, env::var_os(var)));
 
-        for (var, value) in prev {
-            let Some(value) = value else {
-                continue;
-            };
-            let paths: Vec<_> = env::split_paths(value).collect();
+        for (var, always) in &vars {
+            let value = env::var_os(var);
+            let paths: Vec<_> = value.iter().flat_map(env::split_paths).collect();
             let joined = pkg_config_paths.join_paths(&paths);
+            if value.is_none() && (!always || joined.is_empty()) {
+                continue;
+            }
 
             // pkg-config 0.29.2 eats `\` while expanding `${pcfiledir}`, producing
             // corrupt flags (e.g. `C:Userslibpkgconfig`). Forward slashes work on

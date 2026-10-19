@@ -542,6 +542,9 @@ fn download() -> Result<(), Error> {
 #[test]
 fn probe() -> Result<(), Error> {
     let _l = crate::test::LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = crate::test::EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    std::env::remove_var("PKG_CONFIG_PATH");
+    std::env::remove_var("PKG_CONFIG_PATH_FOR_TARGET");
     static PATHS: OnceLock<Paths> = OnceLock::new();
 
     let pkgs = vec![Package {
@@ -572,6 +575,9 @@ fn probe() -> Result<(), Error> {
 #[test]
 fn internal_pkg_config() -> Result<(), Error> {
     let _l = crate::test::LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = crate::test::EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    std::env::remove_var("PKG_CONFIG_PATH");
+    std::env::remove_var("PKG_CONFIG_PATH_FOR_TARGET");
 
     let pkgs = vec![Package {
         name: "test",

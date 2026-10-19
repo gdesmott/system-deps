@@ -3,6 +3,7 @@ use std::{
     cell::Cell,
     collections::HashMap,
     env,
+    ffi::OsString,
     path::{Path, PathBuf},
     rc::Rc,
     sync::{Mutex, OnceLock},
@@ -19,13 +20,33 @@ use super::{
 
 pub(crate) static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
+fn tests_dir() -> PathBuf {
+    env::current_dir().unwrap().join("src").join("tests")
+}
+
+pub(crate) struct EnvGuard(Vec<(&'static str, Option<OsString>)>);
+
+impl EnvGuard {
+    pub(crate) fn new(vars: &[&'static str]) -> Self {
+        Self(vars.iter().map(|&var| (var, env::var_os(var))).collect())
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for (var, value) in &self.0 {
+            match value {
+                Some(value) => env::set_var(var, value),
+                None => env::remove_var(var),
+            }
+        }
+    }
+}
+
 fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
     // PKG_CONFIG_PATH is read by pkg-config, so we need to actually change the env.
     // Callers must hold LOCK for the entire duration of the test to avoid races.
-    env::set_var(
-        "PKG_CONFIG_PATH",
-        env::current_dir().unwrap().join("src").join("tests"),
-    );
+    env::set_var("PKG_CONFIG_PATH", tests_dir());
     create_config_impl(path, env, None)
 }
 
@@ -38,10 +59,7 @@ fn create_config_impl(
 ) -> Config {
     // PKG_CONFIG_PATH is read by pkg-config, so we need to actually change the env.
     // Callers must hold LOCK for the entire duration of the test to avoid races.
-    env::set_var(
-        "PKG_CONFIG_PATH",
-        env::current_dir().unwrap().join("src").join("tests"),
-    );
+    env::set_var("PKG_CONFIG_PATH", tests_dir());
 
     // TARGET and PKG_CONFIG_ALLOW_CROSS are also read by pkg-config, so we need to actually
     // change the env
@@ -53,13 +71,7 @@ fn create_config_impl(
     let mut hash = HashMap::new();
     hash.insert(
         "CARGO_MANIFEST_DIR",
-        env::current_dir()
-            .unwrap()
-            .join("src")
-            .join("tests")
-            .join(path)
-            .to_string_lossy()
-            .to_string(),
+        tests_dir().join(path).to_string_lossy().to_string(),
     );
 
     hash.insert("CARGO_FEATURE_TEST_FEATURE", "".to_string());
@@ -774,6 +786,7 @@ fn test_build_internal(
     env: Vec<(&'static str, &'static str)>,
     expected_lib: &'static str,
 ) -> Result<(Dependencies, bool), (Error, bool)> {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
     let called = Rc::new(Cell::new(false));
     let called_clone = called.clone();
     let config = create_config(path, env).add_build_internal(expected_lib, move |lib, version| {
@@ -857,6 +870,7 @@ fn build_internal_auto_never() {
 
 #[test]
 fn build_internal_always_no_closure() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
     let config = create_config(
         "toml-good",
         vec![("SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL", "always")],
@@ -868,6 +882,7 @@ fn build_internal_always_no_closure() {
 
 #[test]
 fn build_internal_invalid() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
     let config = create_config(
         "toml-good",
         vec![("SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL", "badger")],
@@ -879,6 +894,7 @@ fn build_internal_invalid() {
 
 #[test]
 fn build_internal_wrong_version() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
     // Require version 5
     let called = Rc::new(Cell::new(false));
     let called_clone = called.clone();
@@ -907,6 +923,7 @@ fn build_internal_wrong_version() {
 
 #[test]
 fn build_internal_fail() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
     let called = Rc::new(Cell::new(false));
     let called_clone = called.clone();
     let config = create_config(
@@ -961,7 +978,113 @@ fn build_internal_always_global() {
 }
 
 #[test]
+fn wrap_pkg_config_without_pkg_config_path() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    env::remove_var("PKG_CONFIG_PATH");
+    env::remove_var("PKG_CONFIG_PATH_FOR_TARGET");
+
+    let pc_dir = tests_dir();
+    Library::wrap_pkg_config(&pc_dir, || {
+        let paths: Vec<_> = env::split_paths(&env::var_os("PKG_CONFIG_PATH").unwrap()).collect();
+        assert_eq!(paths, std::slice::from_ref(&pc_dir));
+        assert!(env::var_os("PKG_CONFIG_PATH_FOR_TARGET").is_none());
+        Ok(())
+    })
+    .unwrap();
+
+    assert!(env::var_os("PKG_CONFIG_PATH").is_none());
+    assert!(env::var_os("PKG_CONFIG_PATH_FOR_TARGET").is_none());
+}
+
+#[test]
+fn wrap_pkg_config_with_pkg_config_path() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    let old = PathBuf::from("/usr/lib/fake/pkgconfig");
+    env::set_var("PKG_CONFIG_PATH", &old);
+    env::remove_var("PKG_CONFIG_PATH_FOR_TARGET");
+
+    let pc_dir = tests_dir();
+    Library::wrap_pkg_config(&pc_dir, || {
+        let paths: Vec<_> = env::split_paths(&env::var_os("PKG_CONFIG_PATH").unwrap()).collect();
+        assert_eq!(paths, [pc_dir.clone(), old.clone()]);
+        assert!(env::var_os("PKG_CONFIG_PATH_FOR_TARGET").is_none());
+        Ok(())
+    })
+    .unwrap();
+
+    assert_eq!(env::var_os("PKG_CONFIG_PATH"), Some(old.into()));
+    assert!(env::var_os("PKG_CONFIG_PATH_FOR_TARGET").is_none());
+}
+
+#[test]
+fn wrap_pkg_config_with_only_pkg_config_path_for_target() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    let nix = PathBuf::from("/nix/store/fake/lib/pkgconfig");
+    env::remove_var("PKG_CONFIG_PATH");
+    env::set_var("PKG_CONFIG_PATH_FOR_TARGET", &nix);
+
+    let pc_dir = tests_dir();
+    Library::wrap_pkg_config(&pc_dir, || {
+        let get = |var| env::split_paths(&env::var_os(var).unwrap()).collect::<Vec<_>>();
+        assert_eq!(get("PKG_CONFIG_PATH"), std::slice::from_ref(&pc_dir));
+        assert_eq!(
+            get("PKG_CONFIG_PATH_FOR_TARGET"),
+            [pc_dir.clone(), nix.clone()]
+        );
+        Ok(())
+    })
+    .unwrap();
+
+    assert!(env::var_os("PKG_CONFIG_PATH").is_none());
+    assert_eq!(env::var_os("PKG_CONFIG_PATH_FOR_TARGET"), Some(nix.into()));
+}
+
+#[test]
+fn wrap_pkg_config_without_paths_to_add() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    env::remove_var("PKG_CONFIG_PATH");
+    env::remove_var("PKG_CONFIG_PATH_FOR_TARGET");
+
+    let check = || {
+        assert!(env::var_os("PKG_CONFIG_PATH").is_none());
+        assert!(env::var_os("PKG_CONFIG_PATH_FOR_TARGET").is_none());
+        Ok(())
+    };
+    Library::wrap_pkg_config(None::<&Path>, check).unwrap();
+    Library::wrap_pkg_config(Some(&Vec::<PathBuf>::new()), check).unwrap();
+}
+
+#[test]
+fn probe_without_prebuilt_paths_keeps_pkg_config_path_unset() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    env::remove_var("PKG_CONFIG_PATH");
+
+    let mut hash = HashMap::new();
+    hash.insert(
+        "CARGO_MANIFEST_DIR",
+        tests_dir().join("toml-good").to_string_lossy().to_string(),
+    );
+    #[cfg(feature = "binary")]
+    hash.insert("SYSTEM_DEPS_NO_PREBUILT", "".to_string());
+
+    let err = Config::new_with_env(EnvVariables::Mock(hash))
+        .probe_full()
+        .unwrap_err();
+    assert_matches!(
+        err,
+        Error::PkgConfig(pkg_config::Error::ProbeFailure { command, .. })
+            if !command.contains("PKG_CONFIG_PATH=")
+    );
+}
+
+#[test]
 fn build_internal_global_override() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
     // Request to build all libs using global var but disable it for a specific one
     let called = Rc::new(Cell::new((false, false)));
     let called_clone = called.clone();
