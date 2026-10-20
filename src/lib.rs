@@ -766,6 +766,20 @@ impl fmt::Display for EnvVariable {
 type FnBuildInternal =
     dyn FnOnce(&str, &str) -> std::result::Result<Library, BuildInternalClosureError>;
 
+/// Restores environment variables to their saved values when dropped.
+struct EnvRestore(Vec<(String, Option<OsString>)>);
+
+impl Drop for EnvRestore {
+    fn drop(&mut self) {
+        for (var, value) in &self.0 {
+            match value {
+                Some(val) => env::set_var(var, val),
+                None => env::remove_var(var),
+            }
+        }
+    }
+}
+
 /// Structure used to configure `metadata` before starting to probe for dependencies
 pub struct Config {
     env: EnvVariables,
@@ -1243,6 +1257,14 @@ impl Library {
             }
         };
 
+        // With `--static`, pkgconf repeats the same `-L` for every library in
+        // the `Requires.private` tree, so check each directory and library once.
+        let mut dirs: Vec<&PathBuf> = Vec::new();
+        for dir in &l.link_paths {
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
         let is_static_available = |name: &String| -> bool {
             // MSVC: don't claim a static archive is "available" even when
             // it is on disk. Emitting `cargo:rustc-link-lib=static=...`
@@ -1263,20 +1285,26 @@ impl Library {
                 names
             };
 
-            l.link_paths.iter().any(|dir| {
+            dirs.iter().any(|dir| {
                 let library_exists = libnames.iter().any(|libname| dir.join(libname).exists());
                 library_exists && !system_roots.iter().any(|sys| dir.starts_with(sys))
             })
         };
 
+        let mut cache: HashMap<&String, bool> = HashMap::new();
+        let libs = l
+            .libs
+            .iter()
+            .map(|lib| {
+                let available = *cache.entry(lib).or_insert_with(|| is_static_available(lib));
+                InternalLib::new(lib.to_owned(), available)
+            })
+            .collect();
+
         Self {
             name: name.to_string(),
             source: Source::PkgConfig,
-            libs: l
-                .libs
-                .iter()
-                .map(|lib| InternalLib::new(lib.to_owned(), is_static_available(lib)))
-                .collect(),
+            libs,
             link_paths: l.link_paths,
             link_files: l.link_files,
             include_paths: l.include_paths,
@@ -1318,11 +1346,27 @@ impl Library {
         // and gives `PKG_CONFIG_PATH_FOR_TARGET` precedence over
         // `PKG_CONFIG_PATH`. For this to work inside Nix shells we need to
         // handle the `_FOR_TARGET` variant as well.
-        let vars = [
-            ("PKG_CONFIG_PATH", true),
-            ("PKG_CONFIG_PATH_FOR_TARGET", false),
+        //
+        // The `pkg-config` crate also prefers the target and host specific
+        // variants of `PKG_CONFIG_PATH` when they are set.
+        let mut vars = vec![
+            ("PKG_CONFIG_PATH".to_string(), true),
+            ("PKG_CONFIG_PATH_FOR_TARGET".to_string(), false),
         ];
-        let prev = &vars.map(|(var, _)| (var, env::var_os(var)));
+        if let (Ok(target), Ok(host)) = (env::var("TARGET"), env::var("HOST")) {
+            let kind = if host == target { "HOST" } else { "TARGET" };
+            let target_u = target.replace('-', "_");
+            vars.push((format!("PKG_CONFIG_PATH_{}", target), false));
+            if target_u != target {
+                vars.push((format!("PKG_CONFIG_PATH_{}", target_u), false));
+            }
+            vars.push((format!("{}_PKG_CONFIG_PATH", kind), false));
+        }
+        let _restore = EnvRestore(
+            vars.iter()
+                .map(|(var, _)| (var.clone(), env::var_os(var)))
+                .collect(),
+        );
 
         for (var, always) in &vars {
             let value = env::var_os(var);
@@ -1341,16 +1385,7 @@ impl Library {
             env::set_var(var, joined);
         }
 
-        let res = f();
-
-        for (var, value) in prev {
-            match value {
-                Some(val) => env::set_var(var, val),
-                None => env::remove_var(var),
-            }
-        }
-
-        res
+        f()
     }
 
     /// Create a `Library` by probing `pkg-config` on an internal directory.
@@ -1363,7 +1398,7 @@ impl Library {
     ///
     /// * `pkg_config_dir`: the directory where the library `.pc` file is located
     /// * `lib`: the name of the library to look for
-    /// * `version`: the minimum version of `lib` required
+    /// * `version`: the minimum version of `lib` required, or `"0"` to accept any version
     ///
     /// # Examples
     ///
@@ -1381,8 +1416,14 @@ impl Library {
         version: &str,
     ) -> Result<Self, BuildInternalClosureError> {
         let pkg_lib = Self::wrap_pkg_config(pkg_config_paths, || {
-            pkg_config::Config::new()
-                .atleast_version(version)
+            // The `pkg-config` crate passes the bare name besides the version
+            // constraint, and with `--static` pkgconf 1.8 then prints the private
+            // flags twice. `>= 0` would only reject empty or non-numeric versions.
+            let mut config = pkg_config::Config::new();
+            if version != "0" {
+                config.atleast_version(version);
+            }
+            config
                 .print_system_libs(false)
                 .cargo_metadata(false)
                 .statik(true)
