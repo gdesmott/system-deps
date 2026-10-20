@@ -978,6 +978,38 @@ fn build_internal_always_global() {
 }
 
 #[test]
+fn internal_pkg_config_any_version() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+
+    let lib = Library::from_internal_pkg_config(&tests_dir(), "teststaticrequires", "0").unwrap();
+    let libs: Vec<_> = lib
+        .libs
+        .iter()
+        .map(|l| (l.name.as_str(), l.is_static_available))
+        .collect();
+    let statik = !cfg!(all(target_os = "windows", target_env = "msvc"));
+    assert_eq!(libs, [("testrequires", false), ("teststatic", statik)]);
+
+    assert!(Library::from_internal_pkg_config(&tests_dir(), "teststaticrequires", "9").is_err());
+}
+
+#[cfg(not(all(target_os = "windows", target_env = "msvc")))]
+#[test]
+fn internal_pkg_config_static_in_any_dir() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+
+    let lib = Library::from_internal_pkg_config(&tests_dir(), "teststatictwodirs", "0").unwrap();
+    let libs: Vec<_> = lib
+        .libs
+        .iter()
+        .map(|l| (l.name.as_str(), l.is_static_available))
+        .collect();
+    assert_eq!(libs, [("teststatic", true), ("test", true)]);
+}
+
+#[test]
 fn wrap_pkg_config_without_pkg_config_path() {
     let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
     let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
@@ -1056,6 +1088,133 @@ fn wrap_pkg_config_without_paths_to_add() {
     };
     Library::wrap_pkg_config(None::<&Path>, check).unwrap();
     Library::wrap_pkg_config(Some(&Vec::<PathBuf>::new()), check).unwrap();
+}
+
+#[test]
+fn wrap_pkg_config_restores_on_error() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    env::remove_var("PKG_CONFIG_PATH");
+    env::remove_var("PKG_CONFIG_PATH_FOR_TARGET");
+
+    let res = Library::wrap_pkg_config(tests_dir(), || {
+        Err::<(), _>(pkg_config::Error::EnvNoPkgConfig("X".into()))
+    });
+
+    assert!(res.is_err());
+    assert!(env::var_os("PKG_CONFIG_PATH").is_none());
+    assert!(env::var_os("PKG_CONFIG_PATH_FOR_TARGET").is_none());
+}
+
+#[test]
+fn wrap_pkg_config_restores_on_panic() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let _env = EnvGuard::new(&["PKG_CONFIG_PATH", "PKG_CONFIG_PATH_FOR_TARGET"]);
+    env::set_var("PKG_CONFIG_PATH", "/foo");
+    env::remove_var("PKG_CONFIG_PATH_FOR_TARGET");
+
+    let res = std::panic::catch_unwind(|| {
+        Library::wrap_pkg_config(tests_dir(), || -> Result<(), pkg_config::Error> {
+            std::panic::resume_unwind(Box::new("probe failed"))
+        })
+    });
+
+    assert!(res.is_err());
+    assert_eq!(env::var_os("PKG_CONFIG_PATH").unwrap(), "/foo");
+    assert!(env::var_os("PKG_CONFIG_PATH_FOR_TARGET").is_none());
+}
+
+#[test]
+fn wrap_pkg_config_with_targeted_pkg_config_path() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let targeted = "PKG_CONFIG_PATH_x86_64-unknown-linux-gnu";
+    let _env = EnvGuard::new(&[
+        "TARGET",
+        "HOST",
+        targeted,
+        "PKG_CONFIG_PATH",
+        "PKG_CONFIG_PATH_FOR_TARGET",
+    ]);
+    env::set_var("TARGET", "x86_64-unknown-linux-gnu");
+    env::set_var("HOST", "x86_64-unknown-linux-gnu");
+    env::set_var(targeted, "/nonexistent");
+
+    let lib = Library::from_internal_pkg_config(&tests_dir(), "teststaticlib", "0").unwrap();
+
+    assert_eq!(lib.libs[0].name, "teststatic");
+    assert_eq!(env::var_os(targeted).unwrap(), "/nonexistent");
+}
+
+#[test]
+fn wrap_pkg_config_wraps_only_the_targeted_variants_in_use() {
+    const HOST: &str = "x86_64-unknown-linux-gnu";
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let vars = [
+        "TARGET",
+        "HOST",
+        "PKG_CONFIG_PATH",
+        "PKG_CONFIG_PATH_FOR_TARGET",
+        "PKG_CONFIG_PATH_x86_64-unknown-linux-gnu",
+        "PKG_CONFIG_PATH_x86_64_unknown_linux_gnu",
+        "PKG_CONFIG_PATH_aarch64-unknown-linux-gnu",
+        "PKG_CONFIG_PATH_aarch64_unknown_linux_gnu",
+        "HOST_PKG_CONFIG_PATH",
+        "TARGET_PKG_CONFIG_PATH",
+    ];
+    let _env = EnvGuard::new(&vars);
+    let pc_dir = tests_dir();
+    let user = PathBuf::from("/usr/lib/fake/pkgconfig");
+
+    // (TARGET, variants that are set and must be wrapped, variant that is set and must be left alone)
+    let cases = [
+        (
+            HOST,
+            &[
+                "PKG_CONFIG_PATH_x86_64-unknown-linux-gnu",
+                "PKG_CONFIG_PATH_x86_64_unknown_linux_gnu",
+                "HOST_PKG_CONFIG_PATH",
+            ][..],
+            "TARGET_PKG_CONFIG_PATH",
+        ),
+        (
+            "aarch64-unknown-linux-gnu",
+            &["TARGET_PKG_CONFIG_PATH"][..],
+            "HOST_PKG_CONFIG_PATH",
+        ),
+    ];
+    for (target, wrapped, ignored) in cases {
+        for var in &vars[2..] {
+            env::remove_var(var);
+        }
+        env::set_var("TARGET", target);
+        env::set_var("HOST", HOST);
+        for var in wrapped.iter().chain([&ignored]) {
+            env::set_var(var, &user);
+        }
+
+        Library::wrap_pkg_config(&pc_dir, || {
+            for var in &vars[2..] {
+                let paths = env::var_os(var).map(|v| env::split_paths(&v).collect::<Vec<_>>());
+                let expected = if wrapped.contains(var) {
+                    Some(vec![pc_dir.clone(), user.clone()])
+                } else if *var == ignored {
+                    Some(vec![user.clone()])
+                } else if *var == "PKG_CONFIG_PATH" {
+                    Some(vec![pc_dir.clone()])
+                } else {
+                    None
+                };
+                assert_eq!(paths, expected, "{} (TARGET={})", var, target);
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        for var in &vars[2..] {
+            let expected = (wrapped.contains(var) || *var == ignored).then(|| user.clone().into());
+            assert_eq!(env::var_os(var), expected, "{} (TARGET={})", var, target);
+        }
+    }
 }
 
 #[test]
