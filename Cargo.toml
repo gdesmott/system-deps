@@ -72,6 +72,7 @@ which = { workspace = true, optional = true }
 
 [build-dependencies]
 system-deps-meta = { workspace = true, optional = true }
+heck.workspace = true
 
 [dev-dependencies]
 system-deps-meta = { workspace = true, features = ["test"] }

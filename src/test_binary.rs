@@ -15,7 +15,7 @@ use system_deps_meta::{
     error::Error,
     parse::read_metadata,
     test::{self, assert_set, Package},
-    BUILD_MANIFEST, TARGET_DIR,
+    TARGET_DIR,
 };
 
 use crate::{BuildInternalClosureError, Config, EnvVariables, Library};
@@ -76,10 +76,7 @@ fn assert_paths(paths: Option<&Vec<PathBuf>>, expected: &[&str]) {
 }
 
 fn get_archives(web: Option<&str>) -> (PathBuf, Vec<(Table, &str, String, &str)>) {
-    let base_path = Path::new(BUILD_MANIFEST)
-        .parent()
-        .unwrap()
-        .join("src/tests");
+    let base_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tests");
 
     let mut archives = vec![
         #[cfg(feature = "gz")]
