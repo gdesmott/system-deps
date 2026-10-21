@@ -265,6 +265,30 @@
 //! follows = "liba" # This name corresponds to the key of the metadata table
 //! ```
 //!
+//! The metadata is read from the whole crate graph, starting at the top level `Cargo.toml`, which is found by looking up
+//! from Cargo's `build-dir` (the target directory by default). If it is outside the project, or inside a different one,
+//! set `SYSTEM_DEPS_BUILD_MANIFEST` to the absolute path of the top level `Cargo.toml`.
+//!
+//! `SYSTEM_DEPS_NO_PREBUILT` disables all the prebuilt binaries, and `SYSTEM_DEPS_$NAME_NO_PREBUILT` those of a single
+//! library and of the libraries that follow it. Disabled binaries are not downloaded, and `pkg-config` looks for the
+//! libraries in its usual paths. The prebuilt paths take precedence over `PKG_CONFIG_PATH` and its target specific
+//! variants, but the binaries are selected for the host, so set `SYSTEM_DEPS_NO_PREBUILT` when cross-compiling to a
+//! target they don't support.
+//!
+//! Builds on [docs.rs](https://docs.rs) have no network access, so when `DOCS_RS` is set no binaries are downloaded and
+//! [`Config::query_path`] returns `None` for every library. Build scripts that rely on the prebuilt binaries should return
+//! early in that case, before probing or querying paths:
+//!
+//! ```no_run
+//! fn main() {
+//!     println!("cargo:rerun-if-env-changed=DOCS_RS");
+//!     if std::env::var("DOCS_RS").is_ok() {
+//!         return;
+//!     }
+//!     system_deps::Config::new().probe().unwrap();
+//! }
+//! ```
+//!
 
 #![deny(missing_docs)]
 

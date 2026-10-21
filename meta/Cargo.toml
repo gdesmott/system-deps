@@ -13,6 +13,7 @@ cargo_metadata.workspace = true
 serde.workspace = true
 toml = { workspace = true, features = ["display", "serde"] }
 cfg-expr.workspace = true
+heck = { workspace = true, optional = true }
 sha256 = { workspace = true, optional = true }
 attohttpc = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
@@ -27,7 +28,7 @@ inno = { workspace = true, optional = true }
 junction = { workspace = true, optional = true }
 
 [features]
-binary = ["dep:sha256", "dep:attohttpc", "dep:which", "dep:junction"]
+binary = ["dep:sha256", "dep:attohttpc", "dep:which", "dep:junction", "dep:heck"]
 gz = ["dep:flate2", "dep:tar"]
 xz = ["dep:lzma-rust2", "dep:tar"]
 zip = ["dep:zip"]
