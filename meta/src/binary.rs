@@ -7,6 +7,7 @@ use std::{
     thread,
 };
 
+use heck::ToShoutySnakeCase;
 use serde::{Deserialize, Serialize};
 use toml::{Table, Value};
 
@@ -592,6 +593,32 @@ pub fn merge(rhs: &mut Table, lhs: Table, force: bool) -> Result<(), Error> {
     Ok(())
 }
 
+/// Name of the variable that disables the prebuilt binaries of `lib`, or all of them.
+pub fn no_prebuilt_var(lib: Option<&str>) -> String {
+    match lib {
+        Some(lib) => format!("SYSTEM_DEPS_{}_NO_PREBUILT", lib.to_shouty_snake_case()),
+        None => "SYSTEM_DEPS_NO_PREBUILT".into(),
+    }
+}
+
+/// Removes the binaries disabled with `SYSTEM_DEPS_$NAME_NO_PREBUILT`, and those following them.
+///
+/// `is_set` tells whether a variable is set, and is called once for every binary.
+pub fn skip_disabled(binaries: Table, mut is_set: impl FnMut(&str) -> bool) -> Table {
+    let skipped: Vec<String> = binaries
+        .keys()
+        .filter(|name| is_set(&no_prebuilt_var(Some(name))))
+        .cloned()
+        .collect();
+    binaries
+        .into_iter()
+        .filter(|(name, value)| {
+            let follows = value.get("follows").and_then(|f| f.as_str());
+            !skipped.contains(name) && !follows.is_some_and(|f| skipped.iter().any(|s| s == f))
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -735,5 +762,53 @@ mod tests {
         let url = serve_once("Content-Encoding: gzip\r\nContent-Length: 23\r\n", &GZIP);
         let err = download(url, "compressed").unwrap_err();
         assert!(matches!(err, BinaryError::InvalidChecksum(..)), "{}", err);
+    }
+
+    #[test]
+    fn no_prebuilt_var_names() {
+        assert_eq!(no_prebuilt_var(None), "SYSTEM_DEPS_NO_PREBUILT");
+        assert_eq!(
+            no_prebuilt_var(Some("gstreamer_1_0")),
+            "SYSTEM_DEPS_GSTREAMER_1_0_NO_PREBUILT"
+        );
+    }
+
+    #[test]
+    fn skip_disabled_binaries() {
+        let binaries: Table = toml::from_str(
+            r#"
+            liba = { url = "file:///a" }
+            libb = { follows = "liba" }
+            libc = { url = "file:///c" }
+            libd = { follows = "libc" }
+            "#,
+        )
+        .unwrap();
+        let skip = |set: &[&str]| {
+            let mut checked = Vec::new();
+            let kept: Vec<String> = skip_disabled(binaries.clone(), |var| {
+                checked.push(var.to_string());
+                set.contains(&var)
+            })
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+            assert_eq!(checked.len(), 4, "{:?}", checked);
+            kept
+        };
+
+        assert_eq!(skip(&[]), ["liba", "libb", "libc", "libd"]);
+        assert_eq!(skip(&["SYSTEM_DEPS_LIBA_NO_PREBUILT"]), ["libc", "libd"]);
+        assert_eq!(
+            skip(&["SYSTEM_DEPS_LIBB_NO_PREBUILT"]),
+            ["liba", "libc", "libd"]
+        );
+        assert_eq!(
+            skip(&[
+                "SYSTEM_DEPS_LIBA_NO_PREBUILT",
+                "SYSTEM_DEPS_LIBD_NO_PREBUILT"
+            ]),
+            ["libc"]
+        );
     }
 }
