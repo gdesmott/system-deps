@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
-    fs,
+    fs, io,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     thread,
@@ -375,8 +375,8 @@ fn make_available(bin: UrlBinary, dst: &Path) -> Result<(), BinaryError> {
     }
 
     // Use a local file or download from the web
-    let file = if local {
-        fs::read(url).map_err(BinaryError::LocalFileError)?
+    let (file, expected_len) = if local {
+        (fs::read(url).map_err(BinaryError::LocalFileError)?, None)
     } else {
         let res = attohttpc::get(url)
             .header("User-Agent", "system-deps")
@@ -384,18 +384,29 @@ fn make_available(bin: UrlBinary, dst: &Path) -> Result<(), BinaryError> {
         if res.status() == attohttpc::StatusCode::IM_A_TEAPOT {
             return Err(BinaryError::AntiBot(url.into()));
         }
-        res.error_for_status()?.bytes()?
+        let res = res.error_for_status()?;
+        let expected_len = expected_len(res.headers());
+        (res.bytes()?, expected_len)
     };
 
     // Verify the checksum
     let calculated = sha256::digest(&*file);
     let checksum = match bin.checksum {
         Some(ch) if *ch == calculated => Ok(ch),
-        _ => Err(BinaryError::InvalidChecksum(
-            url.into(),
-            bin.checksum.unwrap_or("<empty>".into()),
-            calculated,
-        )),
+        _ => match expected_len {
+            Some(len) if (file.len() as u64) < len => Err(BinaryError::DownloadError(
+                io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    format!("{url}: received {} of {len} bytes", file.len()),
+                )
+                .into(),
+            )),
+            _ => Err(BinaryError::InvalidChecksum(
+                url.into(),
+                bin.checksum.unwrap_or("<empty>".into()),
+                calculated,
+            )),
+        },
     }?;
     fs::create_dir_all(dst).map_err(BinaryError::DecompressError)?;
 
@@ -414,6 +425,19 @@ fn make_available(bin: UrlBinary, dst: &Path) -> Result<(), BinaryError> {
     fs::write(dst.join("checksum"), checksum).map_err(BinaryError::DecompressError)?;
 
     Ok(())
+}
+
+/// The body length announced by the server, unless the body is compressed.
+fn expected_len(headers: &attohttpc::header::HeaderMap) -> Option<u64> {
+    if headers.contains_key(attohttpc::header::CONTENT_ENCODING) {
+        return None;
+    }
+    headers
+        .get(attohttpc::header::CONTENT_LENGTH)?
+        .to_str()
+        .ok()?
+        .parse()
+        .ok()
 }
 
 /// Generate an `info.toml` file listing all directories containing `.pc` files.
@@ -638,5 +662,78 @@ mod tests {
 
         let result = find_pkgconfig_dirs(&dir);
         assert_eq!(result, vec![dir.join("lib/pkgconfig")]);
+    }
+
+    /// Serve a single response with the given `headers` and `body`.
+    #[cfg(feature = "xz")]
+    fn serve_once(headers: &str, body: &[u8]) -> String {
+        use std::io::{Read, Write};
+
+        let response = [
+            format!("HTTP/1.1 200 OK\r\n{headers}Connection: close\r\n\r\n").as_bytes(),
+            body,
+        ]
+        .concat();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buf = [0; 1024];
+            while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                let n = stream.read(&mut buf).unwrap();
+                if n == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buf[..n]);
+            }
+            stream.write_all(&response).unwrap();
+        });
+        format!("http://127.0.0.1:{port}/archive.tar.xz")
+    }
+
+    #[cfg(feature = "xz")]
+    fn download(url: String, name: &str) -> Result<(), BinaryError> {
+        let bin = UrlBinary {
+            url,
+            checksum: Some("0".repeat(64)),
+            paths: None,
+        };
+        make_available(bin, &create_temp_dir(name).join("dst"))
+    }
+
+    #[cfg(feature = "xz")]
+    #[test]
+    fn truncated_download() {
+        let url = serve_once("Content-Length: 100\r\n", &[0; 10]);
+        let err = download(url, "truncated").unwrap_err();
+        assert!(matches!(err, BinaryError::DownloadError(_)), "{}", err);
+        assert!(
+            err.to_string().contains("received 10 of 100 bytes"),
+            "{}",
+            err
+        );
+    }
+
+    #[cfg(feature = "xz")]
+    #[test]
+    fn complete_download_with_wrong_checksum() {
+        let url = serve_once("Content-Length: 10\r\n", &[0; 10]);
+        let err = download(url, "complete").unwrap_err();
+        assert!(matches!(err, BinaryError::InvalidChecksum(..)), "{}", err);
+    }
+
+    /// The announced length is that of the compressed body, not of the received one.
+    #[cfg(feature = "xz")]
+    #[test]
+    fn compressed_download_with_wrong_checksum() {
+        // Ten zero bytes, gzip compressed.
+        const GZIP: [u8; 23] = [
+            0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x63, 0x60, 0x80, 0x01,
+            0x00, 0x76, 0x68, 0x8a, 0xe3, 0x0a, 0x00, 0x00, 0x00,
+        ];
+        let url = serve_once("Content-Encoding: gzip\r\nContent-Length: 23\r\n", &GZIP);
+        let err = download(url, "compressed").unwrap_err();
+        assert!(matches!(err, BinaryError::InvalidChecksum(..)), "{}", err);
     }
 }
