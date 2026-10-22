@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.1](https://github.com/gdesmott/system-deps/compare/system-deps-meta-v9.0.0...system-deps-meta-v9.0.1) - 2026-10-22
+
+### Other
+
+- Skip the prebuilt binary downloads on docs.rs and when disabled
+- Report truncated downloads as such
+
 ## [9.0.0](https://github.com/gdesmott/system-deps/compare/system-deps-meta-v8.0.0...system-deps-meta-v9.0.0) - 2026-08-14
 
 ### Other

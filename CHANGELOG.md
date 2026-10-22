@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [9.0.1](https://github.com/gdesmott/system-deps/compare/system-deps-v9.0.0...system-deps-v9.0.1) - 2026-10-22
+
+### Other
+
+- Skip the prebuilt binary downloads on docs.rs and when disabled
+- Report truncated downloads as such
+- Wrap the targeted PKG_CONFIG_PATH variants and speed up the probes
+- set SYSTEM_DEPS_BUILD_MANIFEST for release-plz
+- Fix wrap_pkg_config() ignoring its paths without PKG_CONFIG_PATH
+- use crates.io trusted publishing in release-plz
+- Wrap PKG_CONFIG_PATH_FOR_TARGET if present
+- Fix new clippy warnings
+- Update version number in docs
+
 ## [9.0.0](https://github.com/gdesmott/system-deps/compare/system-deps-v8.0.0...system-deps-v9.0.0) - 2026-08-14
 
 ### Fixed
