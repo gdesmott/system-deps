@@ -197,6 +197,19 @@
 //! You can also use the `SYSTEM_DEPS_BUILD_INTERNAL` environment variable with the same values
 //! defining the behavior for all the dependencies which don't have `SYSTEM_DEPS_$NAME_BUILD_INTERNAL` defined.
 //!
+//! A crate can change the default for a dependency with the `build-internal` key, for example to keep building its
+//! library when it is not found:
+//!
+//! ```toml
+//! [package.metadata.system-deps]
+//! testlib = { version = "1.2", build-internal = "auto" }
+//! ```
+//!
+//! While greenfield projects are recommended to stick with the default of `"never"`, packages migrating from some other
+//! system may prefer `"auto"` to preserve their existing behavior.
+//!
+//! Both environment variables still take precedence over it.
+//!
 //! # Static linking
 //!
 //! By default all libraries are dynamically linked, except when build internally as [described above](#internally-build-system-libraries).
@@ -1015,7 +1028,7 @@ impl Config {
             })?;
 
             let name = &dep.key;
-            let build_internal = self.get_build_internal_status(name)?;
+            let build_internal = self.get_build_internal_status(name, dep.build_internal)?;
 
             // `Some` only for a dep served by a downloaded binary bundle.
             // TODO: Pass package version here
@@ -1112,11 +1125,16 @@ impl Config {
         }
     }
 
-    fn get_build_internal_status(&self, name: &str) -> Result<BuildInternal, Error> {
+    fn get_build_internal_status(
+        &self,
+        name: &str,
+        default: Option<BuildInternal>,
+    ) -> Result<BuildInternal, Error> {
         match self.get_build_internal_env_var(EnvVariable::new_build_internal(Some(name)))? {
             Some(b) => Ok(b),
             None => Ok(self
                 .get_build_internal_env_var(EnvVariable::new_build_internal(None))?
+                .or(default)
                 .unwrap_or_default()),
         }
     }
@@ -1623,8 +1641,8 @@ fn split_string(value: &str) -> Vec<String> {
     }
 }
 
-#[derive(Debug, PartialEq, Default)]
-enum BuildInternal {
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub(crate) enum BuildInternal {
     Auto,
     Always,
     #[default]

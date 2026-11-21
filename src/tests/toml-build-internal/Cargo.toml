@@ -1,0 +1,5 @@
+[package]
+name = "toml-build-internal"
+
+[package.metadata.system-deps]
+testdata = { version = "5", build-internal = "auto" }

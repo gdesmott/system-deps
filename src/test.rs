@@ -1298,6 +1298,52 @@ fn build_internal_override_name() {
 }
 
 #[test]
+fn build_internal_default() {
+    // Version 5 is not available, and the metadata asks to build the lib then
+    let (libraries, called) =
+        test_build_internal("toml-build-internal", vec![], "testdata").unwrap();
+
+    assert!(called);
+    assert!(libraries.get_by_name("testdata").is_some());
+}
+
+#[test]
+fn build_internal_default_override() {
+    // The environment takes precedence over the metadata
+    let (err, called) = test_build_internal(
+        "toml-build-internal",
+        vec![("SYSTEM_DEPS_TESTDATA_BUILD_INTERNAL", "never")],
+        "testdata",
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, Error::PkgConfig(..)));
+    assert!(!called);
+}
+
+#[test]
+fn build_internal_default_global_override() {
+    // Including the global variable
+    let (err, called) = test_build_internal(
+        "toml-build-internal",
+        vec![("SYSTEM_DEPS_BUILD_INTERNAL", "never")],
+        "testdata",
+    )
+    .unwrap_err();
+
+    assert!(matches!(err, Error::PkgConfig(..)));
+    assert!(!called);
+}
+
+#[test]
+fn build_internal_default_invalid() {
+    toml_err_invalid(
+        "toml-build-internal-invalid",
+        "metadata.system-deps.testlib`: invalid build-internal value: sometimes (allowed: 'auto', 'always', 'never')",
+    );
+}
+
+#[test]
 fn optional() {
     // without any feature, testmore is not optional
     toml_pkg_config_err_version("toml-optional", "2", vec![]);
