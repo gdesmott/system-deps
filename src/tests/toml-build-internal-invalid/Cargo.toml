@@ -1,0 +1,5 @@
+[package]
+name = "toml-build-internal-invalid"
+
+[package.metadata.system-deps]
+testlib = { version = "1", build-internal = "sometimes" }

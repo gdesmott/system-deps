@@ -1,6 +1,6 @@
 // Parse system-deps metadata from Cargo.toml
 
-use std::{fmt, fs, io::Read, path::Path};
+use std::{fmt, fs, io::Read, path::Path, str::FromStr};
 
 use toml::{
     de::{DeArray, DeTable, DeValue},
@@ -20,6 +20,7 @@ pub(crate) struct Dependency {
     pub(crate) fallback_names: Option<Vec<String>>,
     pub(crate) feature: Option<String>,
     pub(crate) optional: bool,
+    pub(crate) build_internal: Option<crate::BuildInternal>,
     pub(crate) cfg: Option<cfg_expr::Expression>,
     pub(crate) version_overrides: Vec<VersionOverride>,
 }
@@ -46,6 +47,7 @@ impl Default for Dependency {
             fallback_names: None,
             feature: None,
             optional: false,
+            build_internal: None,
             cfg: None,
             version_overrides: Vec::new(),
         }
@@ -74,6 +76,7 @@ enum MetadataError {
     NestedCfg(String),
     NotStringOrTable(String),
     NotString(String),
+    InvalidBuildInternal(String, String),
     CfgExpr(cfg_expr::ParseError),
     Toml(toml::de::Error),
     UnexpectedVersionSetting(String, String, String),
@@ -88,6 +91,10 @@ impl fmt::Display for MetadataError {
             Self::NotATable(k) => write!(f, "`{k}` is not a table"),
             Self::NestedCfg(k) => write!(f, "`{k}`: cfg() cannot be nested"),
             Self::NotString(k) => write!(f, "`{k}`: not a string"),
+            Self::InvalidBuildInternal(k, v) => write!(
+                f,
+                "`{k}`: invalid build-internal value: {v} (allowed: 'auto', 'always', 'never')"
+            ),
             Self::NotStringOrTable(k) => write!(f, "`{k}`: not a string or a table"),
             Self::CfgExpr(e) => write!(f, "{e}"),
             Self::Toml(e) => write!(f, "error parsing TOML: {e}"),
@@ -304,6 +311,14 @@ impl MetaData {
                 }
                 ("optional", &DeValue::Boolean(optional)) => {
                     dep.optional = optional;
+                }
+                ("build-internal", DeValue::String(s)) => {
+                    dep.build_internal = Some(crate::BuildInternal::from_str(s).map_err(|_| {
+                        MetadataError::InvalidBuildInternal(
+                            format!("{p_key}.{name}"),
+                            s.clone().into_owned(),
+                        )
+                    })?);
                 }
                 (version_feature, DeValue::Table(version_settings))
                     if version_feature.starts_with('v') =>
