@@ -1831,3 +1831,25 @@ fn build_internal_borrows() {
     assert!(called);
     assert!(libraries.get_by_name("testlib").is_some());
 }
+
+#[test]
+fn cargo_metadata_later() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    let libraries = create_config("toml-good", vec![])
+        .cargo_metadata(false)
+        .probe()
+        .unwrap();
+
+    // Kept to be printed later
+    assert!(libraries
+        .cargo_metadata
+        .contains("cargo:rustc-link-lib=test\n"));
+    assert!(libraries
+        .cargo_metadata
+        .ends_with("cargo:rustc-cfg=system_deps_have_testlib\n"));
+    libraries.print_cargo_metadata();
+
+    // The same as is printed when probing
+    let printed = create_config("toml-good", vec![]).probe().unwrap();
+    assert_eq!(printed.cargo_metadata, libraries.cargo_metadata);
+}
