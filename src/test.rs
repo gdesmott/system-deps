@@ -43,7 +43,7 @@ impl Drop for EnvGuard {
     }
 }
 
-fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config {
+fn create_config(path: &str, env: Vec<(&'static str, &'static str)>) -> Config<'static> {
     // PKG_CONFIG_PATH is read by pkg-config, so we need to actually change the env.
     // Callers must hold LOCK for the entire duration of the test to avoid races.
     env::set_var("PKG_CONFIG_PATH", tests_dir());
@@ -56,7 +56,7 @@ fn create_config_impl(
     path: &str,
     env: Vec<(&'static str, &'static str)>,
     target: Option<&str>,
-) -> Config {
+) -> Config<'static> {
     // PKG_CONFIG_PATH is read by pkg-config, so we need to actually change the env.
     // Callers must hold LOCK for the entire duration of the test to avoid races.
     env::set_var("PKG_CONFIG_PATH", tests_dir());
@@ -1805,4 +1805,29 @@ cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_FRAMEWORK
 cargo:rerun-if-env-changed=SYSTEM_DEPS_TESTLIB_SEARCH_NATIVE
 "#,
     );
+}
+
+#[test]
+fn build_internal_borrows() {
+    let _l = LOCK.get_or_init(|| Mutex::new(())).lock();
+    // The closure can borrow a local, as it does not outlive `probe_full()`
+    let mut called = false;
+    let config = create_config(
+        "toml-good",
+        vec![("SYSTEM_DEPS_TESTLIB_BUILD_INTERNAL", "always")],
+    )
+    .add_build_internal("testlib", |lib, version| {
+        called = true;
+        let mut pkg_lib = pkg_config::Config::new()
+            .print_system_libs(false)
+            .cargo_metadata(false)
+            .probe(lib)
+            .unwrap();
+        pkg_lib.version = version.to_string();
+        Ok(Library::from_pkg_config(lib, pkg_lib))
+    });
+
+    let libraries = config.probe_full().unwrap();
+    assert!(called);
+    assert!(libraries.get_by_name("testlib").is_some());
 }

@@ -800,8 +800,11 @@ impl fmt::Display for EnvVariable {
     }
 }
 
-type FnBuildInternal =
-    dyn FnOnce(&str, &str) -> std::result::Result<Library, BuildInternalClosureError>;
+/// What a closure given to [`Config::add_build_internal`] returns.
+type BuildInternalResult = std::result::Result<Library, BuildInternalClosureError>;
+
+/// `'closure` is how long the environment of this closure lives for.
+type FnBuildInternal<'closure> = dyn FnOnce(&str, &str) -> BuildInternalResult + 'closure;
 
 /// Restores environment variables to their saved values when dropped.
 struct EnvRestore(Vec<(String, Option<OsString>)>);
@@ -818,20 +821,22 @@ impl Drop for EnvRestore {
 }
 
 /// Structure used to configure `metadata` before starting to probe for dependencies
-pub struct Config {
+///
+/// `'closures` is how long the closures given to [`Config::add_build_internal`] may borrow for.
+pub struct Config<'closures> {
     env: EnvVariables,
-    build_internals: HashMap<String, Box<FnBuildInternal>>,
+    build_internals: HashMap<String, Box<FnBuildInternal<'closures>>>,
     #[cfg(feature = "binary")]
     paths: &'static system_deps_meta::binary::Paths,
 }
 
-impl Default for Config {
+impl Default for Config<'_> {
     fn default() -> Self {
         Self::new_with_env(EnvVariables::Environment)
     }
 }
 
-impl Config {
+impl<'closures> Config<'closures> {
     /// Create a new set of configuration
     pub fn new() -> Self {
         Self::default()
@@ -904,7 +909,8 @@ impl Config {
     /// It receives as argument the library name, and the minimum version required.
     pub fn add_build_internal<F>(mut self, name: &str, func: F) -> Self
     where
-        F: 'static + FnOnce(&str, &str) -> std::result::Result<Library, BuildInternalClosureError>,
+        // TODO dedup with `FnBuildInternal` if `trait_alias` ever becomes stable.
+        F: FnOnce(&str, &str) -> BuildInternalResult + 'closures,
     {
         let mut build_internals = self.build_internals;
         build_internals.insert(name.to_string(), Box::new(func));
