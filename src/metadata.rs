@@ -382,11 +382,7 @@ impl MetaData {
 
 fn validate_version(version: &str) -> bool {
     if let Some((min, max)) = version.split_once(',') {
-        if !min.trim_start().starts_with(">=") || !max.trim_start().starts_with('<') {
-            return false;
-        }
-
-        true
+        !(!min.trim_start().starts_with(">=") || !max.trim_start().starts_with('<'))
     } else {
         true
     }
