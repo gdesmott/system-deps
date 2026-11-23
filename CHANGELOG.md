@@ -6,6 +6,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- with the `binary` feature, system-installed libraries now default to dynamic linking; only packages served by a prebuilt binary are linked statically
+- `Error` is now `#[non_exhaustive]`
+
 ## [9.0.1](https://github.com/gdesmott/system-deps/compare/system-deps-v9.0.0...system-deps-v9.0.1) - 2026-10-22
 
 ### Other
