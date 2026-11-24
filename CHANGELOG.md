@@ -6,6 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [10.0.0](https://github.com/gdesmott/system-deps/compare/system-deps-v9.0.1...system-deps-v10.0.0) - 2026-11-24
+
+### Fixed
+
+- fix new clippy warning
+
+### Other
+
+- Let build-internal closures borrow
+- Allow a dependency to set its default `build-internal` behaviour
+
 ## [9.0.1](https://github.com/gdesmott/system-deps/compare/system-deps-v9.0.0...system-deps-v9.0.1) - 2026-10-22
 
 ### Other
