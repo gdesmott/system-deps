@@ -71,10 +71,12 @@
 //! ```
 //!
 //! # Overriding library name
-//! `toml` keys cannot contain dot characters so if your library name does, you can define it using the `name` field:
+//! Bare `toml` keys that contain dot characters, so if your library name does, you need to either quote it,
+//! or you can define the real name using the `name` field:
 //!
 //! ```toml
 //! [package.metadata.system-deps]
+//! "glib-2.0" = { version = "2.64" }
 //! glib = { name = "glib-2.0", version = "2.64" }
 //! ```
 //!
