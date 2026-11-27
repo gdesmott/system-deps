@@ -403,9 +403,15 @@ impl fmt::Display for Error {
 /// All the system dependencies retrieved by [`Config::probe`].
 pub struct Dependencies {
     libs: BTreeMap<String, Library>,
+    cargo_metadata: String,
 }
 
 impl Dependencies {
+    /// Print the cargo metadata to link the libraries, unless [`Config::probe`] already did.
+    pub fn print_cargo_metadata(&self) {
+        print!("{}", self.cargo_metadata);
+    }
+
     /// Retrieve details about a system dependency.
     ///
     /// # Arguments
@@ -826,6 +832,7 @@ impl Drop for EnvRestore {
 pub struct Config<'closures> {
     env: EnvVariables,
     build_internals: HashMap<String, Box<FnBuildInternal<'closures>>>,
+    cargo_metadata: bool,
     #[cfg(feature = "binary")]
     paths: &'static system_deps_meta::binary::Paths,
 }
@@ -846,6 +853,7 @@ impl<'closures> Config<'closures> {
         let me = Self {
             env,
             build_internals: HashMap::new(),
+            cargo_metadata: true,
             #[cfg(feature = "binary")]
             paths: {
                 // Constructed by reading the serialized value saved by the build script
@@ -880,19 +888,39 @@ impl<'closures> Config<'closures> {
     /// `[package.metadata.system-deps]` section.
     ///
     /// The returned hash is using the `toml` key defining the dependency as key.
+    ///
+    /// Unless disabled with [`Config::cargo_metadata`], this also prints the cargo metadata to
+    /// link them, as [`Dependencies::print_cargo_metadata`] does.
     pub fn probe(self) -> Result<Dependencies, Error> {
         let target = self.env.get("TARGET");
-        let libraries = self.probe_full()?;
+        let cargo_metadata = self.cargo_metadata;
+        let mut libraries = self.probe_full()?;
         let flags = libraries.gen_flags(target.as_deref())?;
 
-        // Output cargo flags
-        println!("{flags}");
-
+        let mut metadata = format!("{flags}\n");
         for (name, _) in libraries.iter() {
-            println!("cargo:rustc-cfg=system_deps_have_{}", name.to_snake_case());
+            metadata += &format!(
+                "cargo:rustc-cfg=system_deps_have_{}\n",
+                name.to_snake_case()
+            );
+        }
+        libraries.cargo_metadata = metadata;
+
+        if cargo_metadata {
+            libraries.print_cargo_metadata();
         }
 
         Ok(libraries)
+    }
+
+    /// Whether [`Config::probe`] prints the cargo metadata to link the libraries, which it does by
+    /// default.
+    ///
+    /// Disable it to print it later, with [`Dependencies::print_cargo_metadata`], for example
+    /// after building C code that uses the libraries, which must be linked before them.
+    pub fn cargo_metadata(mut self, cargo_metadata: bool) -> Self {
+        self.cargo_metadata = cargo_metadata;
+        self
     }
 
     /// Add hook so system-deps can internally build library `name` if requested by user.
